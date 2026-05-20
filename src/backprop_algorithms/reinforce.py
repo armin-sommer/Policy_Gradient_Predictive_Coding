@@ -6,7 +6,7 @@ import os
 import pickle
 import random
 import time
-from typing import Any, Callable, Mapping, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Mapping, Optional, Sequence, Tuple
 
 import flax
 import flax.linen as nn
@@ -15,21 +15,21 @@ import jax.numpy as jnp
 import numpy as np
 import optax
 
-from typing import NamedTuple
-
-class Transition(NamedTuple):
-    observation: jnp.ndarray
-    action: jnp.ndarray
-    reward: jnp.ndarray
-    discount: jnp.ndarray
-    next_observation: jnp.ndarray
-    extras: jnp.ndarray = ()
-
 from env import ProcgenVecEnv, ProcgenEvalEnv
 from utils.utils import EnvConfig
-from networks.policy import Policy
-from networks.networks import FeedForwardNetwork, ActivationFn, make_policy_network, make_value_network, make_cnn_policy_network, make_cnn_value_network
-from networks.distributions import NormalTanhDistribution, ParametricDistribution, PolicyNormalDistribution, DiscreteDistribution
+from networks.networks import ActivationFn
+from backprop_algorithms.common import (
+    Metrics,
+    PMAP_AXIS_NAME as _PMAP_AXIS_NAME,
+    Transition,
+    NetworkParams,
+    Networks,
+    TrainingState,
+    make_inference_fn,
+    make_networks,
+    strip_weak_type as _strip_weak_type,
+    unpmap as _unpmap,
+)
 
 class Config:
     # experiment
@@ -70,116 +70,6 @@ class Config:
     policy_hidden_layer_sizes: Sequence[int] = ()
     value_hidden_layer_sizes: Sequence[int] = ()
     activation: ActivationFn = nn.relu
-
-
-Metrics = Mapping[str, jnp.ndarray]
-
-_PMAP_AXIS_NAME = 'i'
-
-
-def _unpmap(v):
-    return jax.tree_util.tree_map(lambda x: x[0], v)
-
-
-def _strip_weak_type(tree):
-    def f(leaf):
-        leaf = jnp.asarray(leaf)
-        return leaf.astype(leaf.dtype)
-    return jax.tree_util.tree_map(f, tree)
-
-
-@flax.struct.dataclass
-class NetworkParams:
-    """Contains training state for the learner."""
-    policy: Any
-    value: Any
-
-
-@flax.struct.dataclass
-class Networks:
-    policy_network: FeedForwardNetwork
-    value_network: FeedForwardNetwork
-    parametric_action_distribution: Union[ParametricDistribution, DiscreteDistribution]
-
-
-@flax.struct.dataclass
-class TrainingState:
-    """Contains training state for the learner."""
-    optimizer_state: optax.OptState
-    params: NetworkParams
-    env_steps: jnp.ndarray
-
-
-def make_inference_fn(agent_networks: Networks):
-    """Creates params and inference function for the agent."""
-
-    def make_policy(params: Any,
-                    deterministic: bool = False) -> Policy:
-        policy_network = agent_networks.policy_network
-        parametric_action_distribution = agent_networks.parametric_action_distribution
-
-        @jax.jit
-        def policy(observations: jnp.ndarray,
-                key_sample: jnp.ndarray) -> Tuple[jnp.ndarray, Mapping[str, Any]]:
-            logits = policy_network.apply(params, observations)
-            if deterministic:
-                return agent_networks.parametric_action_distribution.mode(logits), {}
-            raw_actions = parametric_action_distribution.sample_no_postprocessing(
-                logits, key_sample)
-            log_prob = parametric_action_distribution.log_prob(logits, raw_actions)
-            postprocessed_actions = parametric_action_distribution.postprocess(
-                raw_actions)
-            return postprocessed_actions, {
-                'log_prob': log_prob,
-                'raw_action': raw_actions
-            }
-
-        return policy
-
-    return make_policy
-
-
-def make_networks(
-        observation_size,
-        action_size: int,
-        policy_hidden_layer_sizes: Sequence[int] = (32,) * 4,
-        value_hidden_layer_sizes: Sequence[int] = (256,) * 5,
-        activation: ActivationFn = nn.swish,
-        discrete_policy: bool = True,
-        use_cnn: bool = False,
-    ) -> Networks:
-    """Make REINFORCE networks."""
-    if discrete_policy:
-        parametric_action_distribution = DiscreteDistribution(
-            param_size=action_size)
-    else:
-        parametric_action_distribution = NormalTanhDistribution(
-            event_size=action_size)
-    if use_cnn:
-        policy_network = make_cnn_policy_network(
-            parametric_action_distribution.param_size,
-            observation_size,
-            hidden_layer_sizes=policy_hidden_layer_sizes,
-            activation=activation)
-        value_network = make_cnn_value_network(
-            observation_size,
-            hidden_layer_sizes=value_hidden_layer_sizes,
-            activation=activation)
-    else:
-        policy_network = make_policy_network(
-            parametric_action_distribution.param_size,
-            observation_size,
-            hidden_layer_sizes=policy_hidden_layer_sizes,
-            activation=activation)
-        value_network = make_value_network(
-            observation_size,
-            hidden_layer_sizes=value_hidden_layer_sizes,
-            activation=activation)
-
-    return Networks(
-        policy_network=policy_network,
-        value_network=value_network,
-        parametric_action_distribution=parametric_action_distribution)
 
 
 def compute_reinforce_loss(
