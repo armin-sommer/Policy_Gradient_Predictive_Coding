@@ -1,0 +1,25 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "meta-learned-planning"
+version = "0.1.0"
+requires-python = ">=3.11"
+readme = "README.md"
+authors = [{name = "Armin Sommer", email = "arminsommer@icloud.com" }]
+dependencies = [
+    "procgen-mirror>=0.10.7",   # Procgen with py3.11/3.12 wheels
+    "gym3>=0.3.3",              # vectorized env interface used by procgen
+    "numpy",
+    "jax",
+    "flax",
+    "optax",
+    "pyrallis",
+    "pyyaml",
+    "wandb",
+]
+
+[tool.hatch.build.targets.wheel]
+only-include = ["src"]
+sources = ["src"]

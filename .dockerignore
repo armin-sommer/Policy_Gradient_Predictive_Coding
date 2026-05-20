@@ -1,0 +1,13 @@
+.git
+.gitignore
+__pycache__
+*.pyc
+*.pyo
+.venv
+venv
+outputs/
+weights/
+wandb/
+.idea
+.vscode
+*.egg-info
