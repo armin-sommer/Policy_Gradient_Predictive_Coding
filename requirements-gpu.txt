@@ -1,4 +1,0 @@
-# GPU-specific install. Apply AFTER `pip install -e .` so the CUDA wheel of
-# jax replaces the CPU jax pulled in by pyproject.toml. Requires CUDA 12 on
-# the host (RunPod's "PyTorch 2.x" base images ship this).
-jax[cuda12]

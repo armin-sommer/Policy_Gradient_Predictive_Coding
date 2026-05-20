@@ -31,9 +31,9 @@ scripts/         # Training and evaluation entry points
 pip install -e .
 ```
 
-For GPU, install the CUDA wheel **after** the editable install so it overrides the CPU `jax`:
+For GPU (requires CUDA 12 on the host — RunPod "PyTorch 2.x" base images ship this):
 ```bash
-pip install -r requirements-gpu.txt
+pip install -e ".[gpu]"
 python -c "import jax; print(jax.devices())"   # expect [CudaDevice(id=0)]
 ```
 
