@@ -20,6 +20,11 @@ dependencies = [
     "wandb",
 ]
 
+# Install with: pip install -e ".[gpu]"
+# Requires CUDA 12 on the host (RunPod "PyTorch 2.x" base images ship this).
+[project.optional-dependencies]
+gpu = ["jax[cuda12]"]
+
 [tool.hatch.build.targets.wheel]
 only-include = ["src"]
 sources = ["src"]
