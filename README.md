@@ -56,3 +56,8 @@ python scripts/run_eval.py \
 ## Dependencies
 
 JAX, Flax, Optax, procgen-mirror, gym3, pyyaml, wandb.
+
+## Notes
+
+- integrarte Distrax from GoogleDeeping - replace the distributions
+- PPO, TRPO, and REINFORCE implementation taken from https://github.com/Matt00n/PolicyGradientsJax 
