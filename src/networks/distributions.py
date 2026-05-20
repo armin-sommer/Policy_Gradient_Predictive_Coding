@@ -1,4 +1,4 @@
-"""Probability distributions in JAX."""
+"""Probability distributions in JAX. - will be replaced by distrax from DeepMind asap"""
 
 import abc
 import jax
