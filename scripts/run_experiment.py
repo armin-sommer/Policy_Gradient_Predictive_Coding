@@ -1,16 +1,18 @@
-"""Generic experiment driver. Reads a Python config under configs/experiments/
-and runs it.
+"""Generic experiment driver.
 
 Usage:
     python scripts/run_experiment.py configs/experiments/tier1_bandit.py
 
 A config module must define:
-    NAME    str               unique name; outputs go under runs/<NAME>/
-    ENV     module            with .ENV: Env and optional .OBS for fixed_obs
+    NAME    str                    unique name; outputs go under runs/<NAME>/
+    ENV     str                    key into envs._registry
+    POLICY  str                    key into policies._registry
     SEEDS   int
-    STEPS   int
-    HIDDEN  int               hidden width of the TinyPolicy
-    REF     str               algorithm key used as cosine reference in plot
+    ITERS   int                    number of update iterations
+    T       int                    rollout length per iteration
+    N       int                    parallel envs per iteration
+    HIDDEN  int                    hidden width of the policy network
+    REF     str                    algorithm key used as cosine reference
     UPDATES dict[str, (module, dict)]   each module exposes make_step(...)
 """
 import argparse
@@ -18,6 +20,7 @@ import importlib.util
 import json
 import pickle
 import sys
+from functools import partial
 from pathlib import Path
 
 import numpy as np
@@ -29,9 +32,11 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 import pc_algorithms  # noqa: F401  (vendored-JPC sys.path wire-up)
-from mdp_experiments.policies import make_tiny_policy
-from mdp_experiments.runner import run_all
-from mdp_experiments.plotting import four_panel
+from envs._registry import make_env
+from policies._registry import make_policy
+from rollout.scan_rollout import collect_rollout
+from runner import run_all
+from plotting import four_panel
 
 
 def load_config(path: Path):
@@ -42,7 +47,6 @@ def load_config(path: Path):
 
 
 def _save_results(results, out_dir: Path):
-    """Pickle raw Log arrays (converted to numpy) for later re-plotting."""
     payload = {name: {f: np.asarray(getattr(log, f)) for f in log._fields}
                for name, log in results.items()}
     with open(out_dir / "results.pkl", "wb") as f:
@@ -55,17 +59,17 @@ def main():
     args = ap.parse_args()
 
     cfg = load_config(Path(args.config))
-    env = cfg.ENV.ENV
-    fixed_obs = getattr(cfg.ENV, "OBS", None)
-    policy = make_tiny_policy(obs_dim=env.OBS_DIM, hidden=cfg.HIDDEN,
-                              n_actions=env.N_ACTIONS,
-                              fixed_obs=fixed_obs)
+    env, fixed_obs = make_env(cfg.ENV)
+    policy = make_policy(cfg.POLICY, env,
+                         hidden=cfg.HIDDEN, fixed_obs=fixed_obs)
+    rollout_fn = partial(collect_rollout, env=env, policy=policy,
+                         T=cfg.T, N=cfg.N)
 
-    updates = {name: mod.make_step(env, policy, **hp)
+    updates = {name: mod.make_step(rollout_fn, policy, env_J=env.J, **hp)
                for name, (mod, hp) in cfg.UPDATES.items()}
 
-    results = run_all(updates, policy, env,
-                      num_seeds=cfg.SEEDS, num_steps=cfg.STEPS)
+    results = run_all(updates, policy, J_fn=env.J,
+                      num_seeds=cfg.SEEDS, num_iters=cfg.ITERS)
 
     out_dir = REPO_ROOT / "runs" / cfg.NAME
     out_dir.mkdir(parents=True, exist_ok=True)

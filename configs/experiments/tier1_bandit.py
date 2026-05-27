@@ -1,18 +1,26 @@
 """Tier 1: Mei one-state two-action MDP. REINFORCE / PPO / TRPO / PCPG vs NPG.
 
-To add an experiment: copy this file, change the env import and/or the
-hyperparameters. Outputs land under runs/<NAME>/.
+To add an experiment: copy this file, change ENV/POLICY/hyperparameters.
+Outputs land under runs/<NAME>/.
+
+Conventions:
+    ITERS   number of update iterations
+    T       rollout length (steps per env per iteration)
+    N       number of parallel envs
 """
-from mdp_experiments.envs import bandit as ENV
-from mdp_experiments.updates import reinforce, ppo, trpo, npg, pcpg
+from algorithms.mdp_experiments import reinforce, ppo, trpo, npg, pcpg
 
 
 NAME    = "simple_bandit"
+ENV     = "bandit"
+POLICY  = "tiny_mlp"
 SEEDS   = 50
-STEPS   = 100
+ITERS   = 100
+T       = 1
+N       = 64
 HIDDEN  = 4
 LR      = 0.05
-REF     = "NPG"          # algorithm whose update direction is the cosine reference
+REF     = "NPG"
 
 UPDATES = {
     "REINFORCE": (reinforce, dict(lr=LR)),
