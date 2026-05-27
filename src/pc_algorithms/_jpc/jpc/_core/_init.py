@@ -1,0 +1,190 @@
+"""Functions to initialise the layer activities of PC networks."""
+
+from jax import vmap, random
+import jax.numpy as jnp
+import equinox as eqx
+from ._energies import _get_param_scalings
+from jaxtyping import PyTree, ArrayLike, Array, PRNGKeyArray, Scalar
+from typing import Callable, Optional
+from ._errors import _check_param_type
+
+
+@eqx.filter_jit
+def init_activities_with_ffwd(
+        model: PyTree[Callable],
+        input: ArrayLike,
+        *,
+        skip_model: Optional[PyTree[Callable]] = None,
+        param_type: str = "sp",
+        gamma: Optional[Scalar] = None
+) -> PyTree[Array]:
+    """Initialises the layers' activity with a feedforward pass
+    $\{ f_\ell(\mathbf{z}_{\ell-1}) \}_{\ell=1}^L$ where $f_\ell(\cdot)$ is some
+    callable layer transformation and $\mathbf{z}_0 = \mathbf{x}$ is the input.
+
+    !!! warning
+
+        `param_type = "mupc"` ([μPC](https://openreview.net/forum?id=lSLSzYuyfX&referrer=%5Bthe%20profile%20of%20Francesco%20Innocenti%5D(%2Fprofile%3Fid%3D~Francesco_Innocenti1))) assumes 
+        that one is using [`jpc.make_mlp()`](https://thebuckleylab.github.io/jpc/api/Utils/#jpc.make_mlp) 
+        to create the model.
+
+    **Main arguments:**
+
+    - `model`: List of callable model (e.g. neural network) layers.
+    - `input`: input to the model.
+
+    **Other arguments:**
+
+    - `skip_model`: Optional skip connection model.
+    - `param_type`: Determines the parameterisation. Options are `"sp"` 
+        (standard parameterisation), `"mupc"` ([μPC](https://openreview.net/forum?id=lSLSzYuyfX&referrer=%5Bthe%20profile%20of%20Francesco%20Innocenti%5D(%2Fprofile%3Fid%3D~Francesco_Innocenti1))), 
+        or `"ntp"` (neural tangent parameterisation). 
+        See [`_get_param_scalings()`](https://thebuckleylab.github.io/jpc/api/Energy%20functions/#jpc._get_param_scalings) 
+        for the specific scalings of these different parameterisations. Defaults
+        to `"sp"`.
+    - `gamma`: Optional scaling factor for the output layer. If provided, the output 
+        layer scaling is multiplied by `1/gamma`. Defaults to `None` (no additional scaling).
+
+    **Returns:**
+
+    List with activity values of each layer.
+
+    """
+    _check_param_type(param_type)
+
+    L = len(model)
+    if skip_model is None:
+        skip_model = [None] * len(model)
+        
+    scalings = _get_param_scalings(
+        model=model, 
+        input=input, 
+        skip_model=skip_model, 
+        param_type=param_type,
+        gamma=gamma
+    )
+
+    z1 = scalings[0] * vmap(model[0])(input)
+    if skip_model[0] is not None:
+        z1 += vmap(skip_model[0])(input)
+
+    activities = [z1]
+    for l in range(1, L):
+        zl = scalings[l] * vmap(model[l])(activities[l - 1])
+
+        if skip_model[l] is not None:
+            skip_output = vmap(skip_model[l])(activities[l - 1])
+            zl += skip_output
+
+        activities.append(zl)
+    
+    return activities
+
+
+def init_activities_from_normal(
+        key: PRNGKeyArray,
+        layer_sizes: PyTree[int],
+        mode: str,
+        batch_size: int,
+        sigma: Scalar = 0.05
+) -> PyTree[Array]:
+    """Initialises network activities from a zero-mean Gaussian 
+    $z_i \sim \mathcal{N}(0, \sigma^2)$.
+
+    **Main arguments:**
+
+    - `key`: `jax.random.PRNGKey` for sampling.
+    - `layer_sizes`: List with dimension of all layers (input, hidden and
+        output).
+    - `mode`: If `"supervised"`, all hidden layers are initialised. If
+        `"unsupervised"` the input layer $\mathbf{z}_0$ is also initialised.
+    - `batch_size`: Dimension of data batch.
+    - `sigma`: Standard deviation for Gaussian to sample activities from.
+        Defaults to 5e-2.
+
+    **Returns:**
+
+    List of randomly initialised activities for each layer.
+
+    """
+    start_l = 0 if mode == "unsupervised" else 1
+    n_layers = len(layer_sizes) if mode == "unsupervised" else len(layer_sizes)-1
+    activities = []
+    for l, subkey in zip(
+            range(start_l, n_layers+1),
+            random.split(key, num=n_layers)
+    ):
+        activities.append(sigma * random.normal(
+            subkey,
+            shape=(batch_size, layer_sizes[l])
+            )
+        )
+    return activities
+
+
+def init_activities_with_amort(
+        amortiser: PyTree[Callable],
+        generator: PyTree[Callable],
+        input: ArrayLike
+) -> PyTree[Array]:
+    """Initialises layers' activity with an amortised network
+    $\{ f_{L-\ell+1}(\mathbf{z}_{L-\ell}) \}_{\ell=1}^L$ where $\mathbf{z}_0 = \mathbf{y}$ is
+    the input or generator's target.
+
+    !!! note
+
+        The output order is reversed for downstream use by the generator.
+
+    **Main arguments:**
+
+    - `amortiser`: List of callable layers for model amortising the inference
+        of the `generator`.
+    - `generator`: List of callable layers for the generative model.
+    - `input`: Input to the amortiser.
+
+    **Returns:**
+
+    List with amortised initialisation of each layer.
+
+    """
+    activities = [vmap(amortiser[0])(input)]
+    for l in range(1, len(amortiser)):
+        activities.append(vmap(amortiser[l])(activities[l - 1]))
+
+    activities = activities[::-1]
+
+    # NOTE: this dummy activity for the last layer is added in case one is 
+    # interested in inspecting the generator's target prediction during inference.
+    activities.append(
+        vmap(generator[-1])(activities[-1])
+    )
+    return activities
+
+
+def init_epc_errors(
+        layer_sizes: PyTree[int],
+        batch_size: int,
+        mode: str = "supervised"
+) -> PyTree[Array]:
+    """Initialises zero errors for use with ePC $\{ \epsilon_\ell = 0 \}_{l=1}^L$.
+
+    **Main arguments:**
+
+    - `layer_sizes`: List with dimension of all layers (input, hidden and
+        output).
+    - `batch_size`: Dimension of data batch.
+    - `mode`: If `"supervised"`, errors are initialised for layers 1 to L-1
+        (hidden layers only). If `"unsupervised"`, errors are initialised for
+        layer 0 (input) and layers 1 to L-1. Defaults to `"supervised"`.
+
+    **Returns:**
+
+    List of zero-initialised error arrays for each layer.
+
+    """
+    start_l = 0 if mode == "unsupervised" else 1
+    n_layers = len(layer_sizes) if mode == "unsupervised" else len(layer_sizes) - 1
+    errors = []
+    for l in range(start_l, n_layers + 1):
+        errors.append(jnp.zeros(shape=(batch_size, layer_sizes[l])))
+    return errors
