@@ -5,22 +5,23 @@ MDP (Mei et al. 2020 style): single constant observation x = [1.0], two actions
 with deterministic rewards r(a=0)=0, r(a=1)=1. J(theta) = pi_theta(a=1).
 
 Policy: tiny MLP   x (1) -> hidden (H=4, tanh) -> logits (2) -> Categorical.
-All algorithms share the same network, init, and per-step sampled batch.
+REINFORCE / PPO / TRPO / NPG run on a Flax MLP. PCPG runs on an Equinox MLP
+built by jpc.make_mlp with identical shape; weights are copied from the same
+Flax init each step (forward-pass parity is asserted at startup).
 
-PCPG (Innocenti, Singh, Buckley 2023 IL fixed-point variant):
-  Forward gives pre-activations z1 = W1 x + b1, h_ff = tanh(z1),
-  logits_ff = W2 h_ff + b2. The "target" for the output is a small step in the
-  policy-gradient direction at the output:
-      logits_tgt = logits_ff + eta * g_logits,
-      g_logits   = E_a[(onehot(a) - pi) * r] (empirical over the batch).
-  Hidden activities mu are then iterated to minimise the free energy
-      F = 1/2 ||mu - tanh(z1)||^2 + 1/2 ||logits_tgt - (W2 mu + b2)||^2,
-  for T inference steps with step size gamma. Weight update uses the
-  resulting prediction errors:
-      eps_y = logits_tgt - (W2 mu + b2),     eps_h = mu - tanh(z1)
-      dW2 = eps_y mu^T,  db2 = eps_y
-      dW1 = (eps_h * (1 - tanh(z1)^2)) x^T,  db1 = eps_h * (1 - tanh(z1)^2)
-  Parameters move by alpha * dW (gradient *ascent* on J, hence + sign).
+PCPG (JPC backend, Innocenti et al. 2024):
+  Output pseudo-target for predictive coding is the policy-gradient nudge to
+  the logits:
+      logits_ff = forward(model, x)                      # FF output activity
+      pi        = softmax(logits_ff)
+      g_logits  = mean_b[ (onehot(a_b) - pi) * r_b ]     # PG signal
+      y_pg      = logits_ff + eta * g_logits
+  Inference: T steps of jpc.update_pc_activities under an SGD optimizer
+  (lr = gamma) with output=y_pg, loss_id="mse". The MSE objective makes the
+  output-layer error equal to (activities[-1] - y_pg), which equals
+  -eta * g_logits when activities are still at the FF init. Then one
+  jpc.update_pc_params step (lr = alpha) propagates the equilibrated
+  activities to weight updates.
 
 Run:  python scripts/mdp_v1_tier1.py
 Outputs: scripts/mdp_v1_tier1.png
@@ -31,10 +32,13 @@ import os
 from typing import NamedTuple
 
 import distrax
+import equinox as eqx
 import jax
 import jax.numpy as jnp
+import jpc
 import matplotlib.pyplot as plt
 import numpy as np
+import optax
 from flax import linen as nn
 
 
@@ -207,45 +211,107 @@ def trpo_step(params, key):
     return unflatten(params, theta_final)
 
 
-def pcpg_step(params, key):
-    actions, rewards = sample_batch(params, key)
-    W1, b1 = params["params"]["h"]["kernel"], params["params"]["h"]["bias"]
-    W2, b2 = params["params"]["out"]["kernel"], params["params"]["out"]["bias"]
-    x = OBS                                     # (1,)
-    z1 = x @ W1 + b1                            # (H,)
-    h_ff = jnp.tanh(z1)                         # (H,)
-    logits_ff = h_ff @ W2 + b2                  # (2,)
-    pi = jax.nn.softmax(logits_ff)              # (2,)
+# --- Equinox / JPC plumbing for PCPG --------------------------------------
+# A template Equinox model with the same shape as TinyPolicy. The actual
+# weights used each step come from the current Flax params (see
+# flax_to_eqx). Built once at module load.
+EQX_MODEL_TEMPLATE = jpc.make_mlp(
+    jax.random.PRNGKey(0), input_dim=1, width=HIDDEN, depth=2,
+    output_dim=2, act_fn="tanh", use_bias=True)
 
-    # PG signal at the output (ascent direction in logit space):
-    onehot = jax.nn.one_hot(actions, 2)         # (B, 2)
-    g_logits = jnp.mean((onehot - pi) * rewards[:, None], axis=0)  # (2,)
-    logits_tgt = logits_ff + PC_ETA * g_logits
 
-    # Inference: minimise F over mu.
-    def infer_body(mu, _):
-        eps_h = mu - h_ff
-        eps_y = logits_tgt - (mu @ W2 + b2)
-        dmu = -eps_h + eps_y @ W2.T
-        return mu + PC_GAMMA * dmu, None
-    mu, _ = jax.lax.scan(infer_body, h_ff, None, length=PC_T)
+def flax_to_eqx(params, template=EQX_MODEL_TEMPLATE):
+    """Inject Flax weights into the Equinox template.
 
-    eps_h = mu - h_ff
-    eps_y = logits_tgt - (mu @ W2 + b2)
-    tanh_prime = 1.0 - jnp.tanh(z1) ** 2
+    Flax stores Dense kernels as (in, out); Equinox Linear weights as (out, in).
+    """
+    W1 = params["params"]["h"]["kernel"].T       # (H, 1)
+    b1 = params["params"]["h"]["bias"]           # (H,)
+    W2 = params["params"]["out"]["kernel"].T     # (2, H)
+    b2 = params["params"]["out"]["bias"]         # (2,)
+    # template[0] = Sequential(Identity, Linear(1->H));
+    # template[1] = Sequential(tanh, Linear(H->2))
+    lin1 = template[0].layers[1]
+    lin2 = template[1].layers[1]
+    new_lin1 = eqx.tree_at(lambda l: (l.weight, l.bias), lin1, (W1, b1))
+    new_lin2 = eqx.tree_at(lambda l: (l.weight, l.bias), lin2, (W2, b2))
+    seq0 = eqx.tree_at(lambda s: s.layers[1], template[0], new_lin1)
+    seq1 = eqx.tree_at(lambda s: s.layers[1], template[1], new_lin2)
+    return [seq0, seq1]
 
-    dW2 = jnp.outer(mu, eps_y)                  # (H, 2)
-    db2 = eps_y                                 # (2,)
-    dW1 = jnp.outer(x, eps_h * tanh_prime)      # (1, H)
-    db1 = eps_h * tanh_prime                    # (H,)
 
-    new_params = {
+def eqx_to_flax(model):
+    lin1 = model[0].layers[1]
+    lin2 = model[1].layers[1]
+    return {
         "params": {
-            "h":   {"kernel": W1 + LR * dW1, "bias": b1 + LR * db1},
-            "out": {"kernel": W2 + LR * dW2, "bias": b2 + LR * db2},
+            "h":   {"kernel": lin1.weight.T, "bias": lin1.bias},
+            "out": {"kernel": lin2.weight.T, "bias": lin2.bias},
         }
     }
-    return new_params
+
+
+def _eqx_forward(model, x_batched):
+    """Forward through the JPC model. x_batched shape (B, 1) -> (B, 2)."""
+    def fwd_one(x):
+        h = model[0](x)
+        return model[1](h)
+    return jax.vmap(fwd_one)(x_batched)
+
+
+def _parity_check():
+    """Assert Flax and Equinox forward passes agree given matched weights."""
+    p = init_params(jax.random.PRNGKey(42))
+    m = flax_to_eqx(p)
+    flax_out = logits_fn(p)                         # (2,)
+    eqx_out  = _eqx_forward(m, OBS[None])[0]        # (2,)
+    assert jnp.max(jnp.abs(flax_out - eqx_out)) < 1e-5, (
+        f"Flax/Equinox forward mismatch: max|diff|={jnp.max(jnp.abs(flax_out-eqx_out)):.2e}")
+    # Round-trip.
+    p2 = eqx_to_flax(m)
+    flax_out2 = logits_fn(p2)
+    assert jnp.max(jnp.abs(flax_out - flax_out2)) < 1e-5
+
+
+_parity_check()
+
+
+def pcpg_step(params, key):
+    actions, rewards = sample_batch(params, key)
+    model = flax_to_eqx(params)
+    jpc_params = (model, None)
+    x_b = OBS[None]                                  # (1, 1)
+
+    # PG pseudo-target at the output activity.
+    logits_ff = _eqx_forward(model, x_b)[0]          # (2,)
+    pi = jax.nn.softmax(logits_ff)
+    onehot = jax.nn.one_hot(actions, 2)              # (B, 2)
+    g_logits = jnp.mean((onehot - pi) * rewards[:, None], axis=0)
+    y_pg = (logits_ff + PC_ETA * g_logits)[None]     # (1, 2)
+
+    # Inference: T steps of activity SGD under MSE loss against y_pg.
+    activities0 = jpc.init_activities_with_ffwd(model=model, input=x_b)
+    inf_optim = optax.sgd(learning_rate=PC_GAMMA)
+    inf_state0 = inf_optim.init(activities0)
+
+    def inf_body(carry, _):
+        acts, st = carry
+        out = jpc.update_pc_activities(
+            params=jpc_params, activities=acts,
+            optim=inf_optim, opt_state=st,
+            output=y_pg, input=x_b)
+        return (out["activities"], out["opt_state"]), None
+    (acts_eq, _), _ = jax.lax.scan(
+        inf_body, (activities0, inf_state0), None, length=PC_T)
+
+    # One parameter step at equilibrated activities.
+    p_optim = optax.sgd(learning_rate=LR)
+    p_state = p_optim.init(jpc_params)
+    out = jpc.update_pc_params(
+        params=jpc_params, activities=acts_eq,
+        optim=p_optim, opt_state=p_state,
+        output=y_pg, input=x_b)
+    return eqx_to_flax(out["model"])
 
 
 ALGOS = {
