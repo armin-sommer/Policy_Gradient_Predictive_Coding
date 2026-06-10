@@ -35,8 +35,7 @@ python scripts/run_train.py --config configs/default.yaml --overrides agent.algo
 
 # bandit comparison (plot + logs go to results/bandit_seed{seed}/)
 python scripts/run_bandit_comparison.py --seed 0
-python scripts/run_bandit_comparison.py --algos reinforce trpo --seed 0
-python scripts/run_bandit_multi_seed.py          # seeds 1-6, 8-21, --no-plot
+python scripts/run_bandit_multi_seed.py          # seeds 1-6, 8-21
 python scripts/summarize_bandit_seeds.py         # -> results/bandit_multi_seed/
 
 # eval a checkpoint
@@ -46,35 +45,23 @@ python scripts/run_eval.py --config configs/default.yaml \
 
 ## Results
 
-2-armed bandit (arm means 1.0 / 0.9), softmax policy started adversarially at pi(optimal) ~ 2%. Vanilla PG has a vanishing gradient there (pi(1-pi)·gap); natural PG cancels it via the Fisher. Where does PC land?
+2-armed bandit (arm means 1.0 / 0.9), softmax policy started adversarially at pi(optimal) ~ 2%. Vanilla PG has a vanishing gradient there (pi(1-pi)·gap); natural PG cancels it via the Fisher.
 
 ![bandit comparison](results/bandit_seed0/bandit_npg_vs_pg_seed0.png)
 
-| | final pi(opt) | avg pi(opt) |
-|---|---|---|
-| TRPO (natural PG) | 1.000 | 0.972 |
-| PC actor-critic (TD value head) | 1.000 | 0.554 |
-| PC-REINFORCE (MC returns) | 1.000 | 0.487 |
-| Cleanba PPO | 0.020 | 0.023 |
-| REINFORCE (SGD) | 0.010 | 0.015 |
-
-Both PC variants escape the plateau and converge; the first-order backprop methods stay stuck. Same picture on seed 7 (`results/bandit_seed7/`). The PC policies are trained entirely with `jpc.make_pc_step` on advantage-weighted output targets — no backprop; the actor-critic variant bootstraps from a PC-trained value head instead of Monte Carlo returns.
-
-22 seeds (0–21): TRPO hits final π(opt) ≥ 0.9 every time; PC-REINFORCE 21/22, PC actor-critic 20/22. REINFORCE and Cleanba PPO never break past ~3%. Aggregates in `results/bandit_multi_seed/` (mean final π(opt): TRPO 0.996, PC-REINFORCE 0.985, PC actor-critic 0.975).
-
-**10 seeds (1–10, 60k env steps each)** — aggregate in `results/bandit_multi_seed/`:
+**22 seeds** (0, 1–6, 7, 8–21; 60k env steps each) — `results/bandit_multi_seed/`:
 
 ![multi-seed learning curves](results/bandit_multi_seed/mean_learning_curve_sem.png)
 
-| | final π(opt) mean ± SEM | success (≥0.9) | steps to ≥0.9 (median) |
+| | final π(opt) mean±SEM | P(final≥0.9) | median steps to 0.9 |
 |---|---|---|---|
-| TRPO | 0.993 ± 0.007 | 10/10 | 6000 |
-| PC-REINFORCE | 0.968 ± 0.029 | 9/10 | 38000 |
-| PC actor-critic | 0.969 ± 0.024 | 9/10 | 44000 |
-| Cleanba PPO | 0.026 ± 0.003 | 0/10 | — |
-| REINFORCE | 0.018 ± 0.003 | 0/10 | — |
+| TRPO | 0.996±0.003 | 22/22 | 6000 |
+| PC-REINFORCE | 0.985±0.013 | 21/22 | 38000 |
+| PC actor-critic | 0.975±0.014 | 20/22 | 43000 |
+| Cleanba PPO | 0.025±0.003 | 0/22 | — |
+| REINFORCE | 0.018±0.002 | 0/22 | — |
 
-Re-run: `python scripts/run_bandit_multi_seed.py` then `python scripts/summarize_bandit_seeds.py`.
+TRPO and both PC variants escape the adversarial init on almost every seed; first-order backprop methods stay on the plateau.
 
 ## TODO
 

@@ -511,8 +511,7 @@ def main(_):
 
         # save scores
         run_dir = os.path.join('experiments', run_name)
-        if not os.path.exists(run_dir):
-            os.makedirs(run_dir)
+        os.makedirs(run_dir, exist_ok=True)
         with open(os.path.join(run_dir, "scores.pkl"), "wb") as f:
             pickle.dump(scores, f)
 
