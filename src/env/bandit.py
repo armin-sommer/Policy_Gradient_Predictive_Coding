@@ -1,9 +1,4 @@
-"""Multi-armed bandit environment with the PolicyGradientsJax VecEnv API.
-
-Single state, K arms (default 2). Every step is a full episode (done=1).
-The observation is a constant 1-dim feature so the policy reduces to a
-state-independent softmax over logits.
-"""
+"""K-armed bandit VecEnv (1-step episodes)."""
 
 from typing import List
 
@@ -47,7 +42,6 @@ class BanditVecEnv:
             reward = means
         else:
             reward = self._rng.binomial(1, np.clip(means, 0.0, 1.0)).astype(np.float32)
-        # one-step episodes: every pull terminates
         done = np.ones(self.num_envs, dtype=np.float32)
         info: List[dict] = [{"truncation": 0.0} for _ in range(self.num_envs)]
         return State(

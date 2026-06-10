@@ -97,12 +97,7 @@ def make_inference_fn(agent_networks: Networks):
 
 
 def apply_policy_init_logit_bias(policy_params, logit_bias):
-    """Overwrite the final MLP policy layer so initial logits equal `logit_bias`.
-
-    Zeroes the final kernel and sets its bias, giving an exact, observation-
-    independent initial policy (e.g. adversarial init for the bandit
-    NPG-vs-PG experiment). Only supports the MLP policy ('hidden_*' layers).
-    """
+    """Set final MLP policy bias (and zero kernel) for a fixed initial policy."""
     logit_bias = jnp.asarray(logit_bias, dtype=jnp.float32)
     params = flax.core.unfreeze(policy_params)
     layers = params["params"]

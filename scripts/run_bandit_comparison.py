@@ -1,20 +1,4 @@
-"""Policy gradient methods on the 2-armed bandit.
-
-Runs REINFORCE (vanilla policy gradient, SGD), TRPO (natural policy gradient
-+ line search), Cleanba PPO (clipped surrogate, Adam), and PC-REINFORCE
-(predictive-coding-trained policy via jpc) on the 2-armed bandit with an
-adversarial initialization (pi(optimal arm) ~ 2%), tracks pi(optimal arm) per
-update via stochastic evaluation, and writes a comparison plot.
-
-Why TRPO always wins here: with a softmax policy the vanilla PG gradient on
-the logit gap is pi*(1-pi)*gap, which vanishes at the adversarial init, while
-NPG preconditions with the inverse Fisher (= 1/(pi*(1-pi))) and makes constant
-progress in logit space per update.
-
-Usage:
-    python scripts/run_bandit_comparison.py --seed 0
-    python scripts/run_bandit_comparison.py --algos reinforce trpo --seed 0
-"""
+"""Run policy gradient methods on the 2-armed bandit and plot pi(optimal arm)."""
 
 import argparse
 import importlib

@@ -1,16 +1,4 @@
-"""Cleanba-style PPO baseline in JAX/Flax.
-
-Single-file PPO following the loss/update structure of Cleanba
-(https://github.com/vwxyzjn/cleanba) / CleanRL:
-  - GAE computed once per iteration (not recomputed per minibatch),
-  - rollout flattened over (steps * envs) and shuffled into minibatches,
-  - per-minibatch advantage normalization,
-  - clipped value loss,
-  - Adam(eps=1e-5) with linear LR decay to 0.
-
-Reuses this repo's networks, distributions, and env wrappers so it plugs
-into scripts/run_train.py like the other algorithms.
-"""
+"""Cleanba/CleanRL-style PPO baseline."""
 
 import logging
 from functools import partial
@@ -49,13 +37,12 @@ class Config:
     write_logs_to_file = False
     save_model = False
 
-    # environment (Procgen or bandit)
     env_name = 'coinrun'
     num_envs = 8
     num_train_levels = 200
     distribution_mode = 'easy'
-    arm_means = (1.0, 0.9)          # bandit only
-    deterministic_rewards = True    # bandit only
+    arm_means = (1.0, 0.9)
+    deterministic_rewards = True
 
     # eval
     eval_env = True
@@ -85,7 +72,7 @@ class Config:
     policy_hidden_layer_sizes: Sequence[int] = ()
     value_hidden_layer_sizes: Sequence[int] = ()
     activation: ActivationFn = nn.relu
-    policy_init_logit_bias = None  # e.g. [0.0, 4.0] for the bandit plateau init
+    policy_init_logit_bias = None
 
 
 class Batch(NamedTuple):

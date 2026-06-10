@@ -1,20 +1,4 @@
-"""PC-REINFORCE: policy gradient with a predictive-coding-trained policy.
-
-The policy is a predictive coding network (PCN) built and trained with
-jpc (https://github.com/thebuckleylab/jpc). Instead of backpropagating the
-REINFORCE loss, each update constructs *advantage-weighted output targets*
-
-    y = logits + target_scale * A(a) * (onehot(a) - pi)
-
-so that the PCN's output-layer error epsilon = y - logits equals the policy
-gradient of the REINFORCE objective w.r.t. the logits. jpc then (1) relaxes
-the network activities to equilibrium via its inference dynamics and
-(2) updates the weights with local PC rules at that equilibrium
-(jpc.make_pc_step) -- no end-to-end backprop through the policy.
-
-Follows the repo's Config + main() convention so scripts/run_train.py can
-dispatch to it.
-"""
+"""PC-REINFORCE — REINFORCE with a jpc-trained policy (no backprop)."""
 
 import logging
 import os
@@ -40,7 +24,6 @@ class Config:
     write_logs_to_file = False
     save_model = False
 
-    # environment (bandit; any discrete env with flat obs works)
     env_name = 'bandit'
     num_envs = 8
     num_train_levels = 200
@@ -48,28 +31,26 @@ class Config:
     arm_means = (1.0, 0.9)
     deterministic_rewards = True
 
-    # eval
     eval_env = True
     num_eval_episodes = 200
     eval_every = 1
 
     # algorithm hyperparameters
     total_timesteps = 60_000
-    unroll_length = 250            # env steps per update (x num_envs samples)
-    learning_rate = 1e-2           # optax optimiser for the PC parameter update
-    target_scale = 1.0             # scale of the advantage-weighted output target
-    pc_steps_per_update = 1        # how many jpc.make_pc_step calls per batch
-    max_t1 = 20                    # jpc inference (activity relaxation) horizon
+    unroll_length = 250
+    learning_rate = 1e-2
+    target_scale = 1.0
+    pc_steps_per_update = 1
+    max_t1 = 20
 
-    # PCN architecture (jpc.make_mlp)
     width = 32
     depth = 2
     act_fn = 'relu'
-    policy_init_logit_bias = None  # e.g. [0.0, 4.0] for the bandit plateau init
+    policy_init_logit_bias = None
 
 
 def _set_final_layer(model, logit_bias):
-    """Zero the PCN's final Linear kernel and set its bias (adversarial init)."""
+    """Zero final layer kernel and set bias."""
     logit_bias = jnp.asarray(logit_bias, dtype=jnp.float32)
     final_linear = model[-1].layers[1]
     if final_linear.bias is None:
@@ -119,7 +100,6 @@ def main(_):
     action_size = envs.action_space.n
     obs_dim = int(np.prod(env_state.obs.shape[1:]))
 
-    # PCN policy: list of equinox layers trained with predictive coding
     model = jpc.make_mlp(
         key_model,
         input_dim=obs_dim,
@@ -178,16 +158,12 @@ def main(_):
             rew_buf.append(nstate.reward)
             env_state = nstate
 
-        observations = jnp.concatenate([jnp.asarray(o) for o in obs_buf])      # (B, obs)
-        actions = jnp.concatenate([jnp.asarray(a) for a in act_buf])           # (B,)
-        logits = jnp.concatenate([jnp.asarray(l) for l in logit_buf])          # (B, A)
-        rewards = jnp.concatenate([jnp.asarray(r) for r in rew_buf])           # (B,)
+        observations = jnp.concatenate([jnp.asarray(o) for o in obs_buf])
+        actions = jnp.concatenate([jnp.asarray(a) for a in act_buf])
+        logits = jnp.concatenate([jnp.asarray(l) for l in logit_buf])
+        rewards = jnp.concatenate([jnp.asarray(r) for r in rew_buf])
 
-        # REINFORCE with mean-reward baseline (1-step episodes => return = reward)
         advantages = rewards - rewards.mean()
-
-        # Advantage-weighted PC output targets: epsilon = y - logits is exactly
-        # the REINFORCE gradient w.r.t. the logits.
         pi = jax.nn.softmax(logits)
         onehot = jax.nn.one_hot(actions, action_size)
         targets = logits + Config.target_scale * advantages[:, None] * (onehot - pi)
