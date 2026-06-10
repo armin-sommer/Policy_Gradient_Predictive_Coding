@@ -1,6 +1,5 @@
 #!/bin/sh
-# Drop Co-authored-by / "Made with Cursor" trailers so tooling doesn't
-# show up as contributors on GitHub. Keeps the subject and body you wrote.
+#new
 msg="$1"
 [ -f "$msg" ] || exit 0
 tmp="${msg}.$$"
