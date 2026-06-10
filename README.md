@@ -34,7 +34,9 @@ python scripts/run_train.py --config configs/default.yaml
 python scripts/run_train.py --config configs/default.yaml --overrides agent.algorithm=trpo seed=7
 
 # bandit (results/bandit_{init}_seed{seed}/; favor_suboptimal legacy: bandit_seed{seed}/)
-python scripts/run_bandit_comparison.py --init uniform --seed 1
+python scripts/run_bandit_comparison.py --seed 1   # default init: favor_suboptimal
+python scripts/run_bandit_multi_seed.py          # favor_suboptimal × seeds 1–10
+python scripts/summarize_bandit_seeds.py         # -> results/bandit_multi_seed/
 python scripts/run_bandit_multi_init.py          # 5 inits × seeds 1–10
 python scripts/summarize_bandit_inits.py         # -> results/bandit_multi_init/
 
@@ -45,7 +47,25 @@ python scripts/run_eval.py --config configs/default.yaml \
 
 ## Results
 
-2-armed bandit (arm means 1.0 / 0.9), 60k steps, 10 seeds (1–10). Policy is a softmax with final-layer kernel zeroed; bias init `[b₀, b₁]` sets π₀(opt) = sigmoid(b₀ − b₁). Five inits in `scripts/bandit_inits.py`:
+2-armed bandit (arm means 1.0 / 0.9), 60k steps. Policy is a softmax with final-layer kernel zeroed; bias init `[b₀, b₁]` sets π₀(opt) = sigmoid(b₀ − b₁).
+
+### favor_suboptimal init, 10 seeds (1–10)
+
+π₀(opt) ≈ 2% via logit bias `[0, 4]` — the softmax plateau where vanilla PG stalls. Aggregates in `results/bandit_multi_seed/`:
+
+![favor_suboptimal learning curves](results/bandit_multi_seed/mean_learning_curve_sem.png)
+
+| | final π(opt) mean ± SEM | success (≥0.9) | median steps to 0.9 |
+|---|---|---|---|
+| TRPO | 0.993 ± 0.007 | 10/10 | 6000 |
+| PC-REINFORCE | 0.968 ± 0.029 | 9/10 | 38000 |
+| PC actor-critic | 0.969 ± 0.024 | 9/10 | 44000 |
+| Cleanba PPO | 0.026 ± 0.003 | 0/10 | — |
+| REINFORCE | 0.018 ± 0.003 | 0/10 | — |
+
+### Five policy inits × 10 seeds
+
+Sweep π₀ from 2% to 98%. Presets in `scripts/bandit_inits.py`:
 
 | init | logit bias | π₀(opt) |
 |---|---|---|
@@ -65,9 +85,7 @@ python scripts/run_eval.py --config configs/default.yaml \
 | mild_suboptimal (27%) | 1.000 ± 0.000 (10/10) | 0.994 ± 0.004 (10/10) | 0.998 ± 0.001 (10/10) | 0.378 ± 0.006 (0/10) | 0.559 ± 0.017 (0/10) |
 | favor_suboptimal (2%) | 0.993 ± 0.007 (10/10) | 0.968 ± 0.029 (9/10) | 0.969 ± 0.024 (9/10) | 0.026 ± 0.003 (0/10) | 0.018 ± 0.003 (0/10) |
 
-Values are final π(opt) mean ± SEM; parentheses are seeds with final π ≥ 0.9. TRPO and both PC variants succeed from every start; REINFORCE and PPO only when π₀ is already high.
-
-Re-run: `python scripts/run_bandit_multi_init.py` then `python scripts/summarize_bandit_inits.py`. Full stats in `results/bandit_multi_init/`.
+Values are final π(opt) mean ± SEM; parentheses are seeds with final π ≥ 0.9. TRPO and both PC variants succeed from every start; REINFORCE and PPO only when π₀ is already high. Full stats in `results/bandit_multi_init/`.
 
 ## TODO
 
