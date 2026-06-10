@@ -1,0 +1,13 @@
+# Final-layer logit bias [b0, b1] for 2-arm softmax (arm 0 optimal).
+# pi(arm0) = sigmoid(b0 - b1) with zeroed final kernel.
+# Source of truth: scripts/bandit_inits.py INIT_PRESETS
+uniform:
+  logit_bias: [0.0, 0.0]
+mild_suboptimal:
+  logit_bias: [0.0, 1.0]
+favor_suboptimal:
+  logit_bias: [0.0, 4.0]
+mild_optimal:
+  logit_bias: [1.0, 0.0]
+favor_optimal:
+  logit_bias: [4.0, 0.0]

@@ -1,0 +1,6 @@
+init=uniform logit_bias=[0.0, 0.0] pi0=0.5000 seed=9 total_steps=60000
+REINFORCE (vanilla PG, SGD)      final pi(opt) = 0.670   avg pi(opt) = 0.620
+TRPO (natural PG)                final pi(opt) = 1.000   avg pi(opt) = 0.994
+Cleanba PPO (Adam)               final pi(opt) = 0.670   avg pi(opt) = 0.562
+PC-REINFORCE (jpc, MC returns)   final pi(opt) = 1.000   avg pi(opt) = 0.916
+PC actor-critic (jpc, TD value head) final pi(opt) = 1.000   avg pi(opt) = 0.886

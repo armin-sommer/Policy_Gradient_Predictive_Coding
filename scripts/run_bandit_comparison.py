@@ -10,12 +10,15 @@ from pathlib import Path
 import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+SCRIPTS_ROOT = REPO_ROOT / "scripts"
 SRC_ROOT = REPO_ROOT / "src"
-if str(SRC_ROOT) not in sys.path:
-    sys.path.insert(0, str(SRC_ROOT))
+for p in (str(SCRIPTS_ROOT), str(SRC_ROOT)):
+    if p not in sys.path:
+        sys.path.insert(0, p)
+
+from bandit_inits import DEFAULT_INIT, load_inits, result_dir
 
 ARM_MEANS = (1.0, 0.9)  # arm 0 optimal, gap = 0.1
-ADVERSARIAL_LOGIT_BIAS = [0.0, 4.0]  # pi(arm 0) = sigmoid(-4) ~ 1.8%
 
 ALGO_MODULES = {
     "reinforce": "backprop_algorithms.reinforce",
@@ -52,14 +55,14 @@ class MetricsCapture(logging.Handler):
             self.eval_points.append((self._last_step, float(msg['eval/mean_score'])))
 
 
-def configure_bandit(Config, seed, total_timesteps):
+def configure_bandit(Config, seed, total_timesteps, logit_bias):
     Config.env_name = 'bandit'
     Config.arm_means = ARM_MEANS
     Config.deterministic_rewards = True
     Config.use_cnn = False
     Config.policy_hidden_layer_sizes = ()
     Config.value_hidden_layer_sizes = ()
-    Config.policy_init_logit_bias = ADVERSARIAL_LOGIT_BIAS
+    Config.policy_init_logit_bias = logit_bias
     Config.total_timesteps = total_timesteps
     Config.anneal_lr = False
     Config.entropy_cost = 0.0
@@ -72,10 +75,10 @@ def configure_bandit(Config, seed, total_timesteps):
     Config.gamma = 0.99
 
 
-def run_algo(algo, seed, total_timesteps, log_dir=None):
+def run_algo(algo, seed, total_timesteps, logit_bias, log_dir=None):
     module = importlib.import_module(ALGO_MODULES[algo])
     Config = module.Config
-    configure_bandit(Config, seed, total_timesteps)
+    configure_bandit(Config, seed, total_timesteps, logit_bias)
 
     if algo == "reinforce":
         Config.num_envs = 1
@@ -142,20 +145,34 @@ def main():
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--total-steps", type=int, default=60_000)
     parser.add_argument("--out-dir", type=str, default=None,
-                        help="Defaults to results/bandit_seed{seed}/ (tracked in git).")
+                        help="Defaults to results/bandit_{init}_seed{seed}/.")
+    parser.add_argument("--init", type=str, default=DEFAULT_INIT,
+                        help="Named preset from configs/bandit_inits.yaml.")
+    parser.add_argument("--logit-bias", type=float, nargs=2, default=None,
+                        metavar=("B0", "B1"),
+                        help="Override --init with explicit [b0, b1].")
     parser.add_argument("--algos", nargs="*", default=list(ALGO_MODULES),
                         choices=list(ALGO_MODULES))
     parser.add_argument("--no-plot", action="store_true",
                         help="Skip per-seed PNG (faster for batch runs).")
     args = parser.parse_args()
 
-    out_dir = args.out_dir or str(REPO_ROOT / "results" / f"bandit_seed{args.seed}")
+    inits = load_inits()
+    if args.init not in inits:
+        raise SystemExit(f"unknown init {args.init!r}; choose from {list(inits)}")
+    init_name = args.init
+    logit_bias = list(args.logit_bias) if args.logit_bias else inits[init_name]["logit_bias"]
+    pi0 = inits[init_name]["pi_opt"] if args.logit_bias is None else (
+        1.0 / (1.0 + np.exp(logit_bias[1] - logit_bias[0])))
+
+    out_dir = args.out_dir or str(result_dir(init_name, args.seed))
     os.makedirs(out_dir, exist_ok=True)
 
     results = {}
     for algo in args.algos:
-        print(f"\n=== running {algo} on the 2-armed bandit ===\n")
-        results[algo] = run_algo(algo, args.seed, args.total_steps, log_dir=out_dir)
+        print(f"\n=== running {algo} on the 2-armed bandit ({init_name}) ===\n")
+        results[algo] = run_algo(
+            algo, args.seed, args.total_steps, logit_bias, log_dir=out_dir)
 
     out_path = None
     if not args.no_plot:
@@ -172,7 +189,8 @@ def main():
         ax.set_ylabel(r"$\pi$(optimal arm)")
         ax.set_ylim(-0.05, 1.05)
         ax.set_title(
-            f"2-armed bandit, adversarial init $\\pi_0 \\approx 0.018$ (seed {args.seed})")
+            f"2-armed bandit, {init_name} init $\\pi_0 \\approx {pi0:.3f}$ "
+            f"(seed {args.seed})")
         ax.legend()
         fig.tight_layout()
         out_path = os.path.join(out_dir, f"bandit_npg_vs_pg_seed{args.seed}.png")
@@ -198,7 +216,9 @@ def main():
             f"{LABELS[algo]:<32} final pi(opt) = {final_pi:.3f}   avg pi(opt) = {avg_pi:.3f}")
     print("\n".join(summary_lines))
     with open(os.path.join(out_dir, "summary.txt"), "w") as f:
-        f.write(f"seed={args.seed} total_steps={args.total_steps}\n")
+        f.write(
+            f"init={init_name} logit_bias={logit_bias} pi0={pi0:.4f} "
+            f"seed={args.seed} total_steps={args.total_steps}\n")
         f.write("\n".join(summary_lines) + "\n")
 
 
