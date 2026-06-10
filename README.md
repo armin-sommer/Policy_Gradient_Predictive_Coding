@@ -31,6 +31,11 @@ scripts/         # Training and evaluation entry points
 pip install -e .
 ```
 
+After cloning, enable the repo's git hooks (strips AI agent attribution from commit messages):
+```bash
+git config core.hooksPath .githooks
+```
+
 For GPU (requires CUDA 12 on the host — RunPod "PyTorch 2.x" base images ship this):
 ```bash
 pip install -e ".[gpu]"
