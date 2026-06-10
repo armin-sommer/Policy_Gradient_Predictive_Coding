@@ -33,11 +33,12 @@ Use JAX 0.4.38 + Flax 0.10.2 + Optax 0.2.4 (jpc needs JAX <= 0.5.2, the pmap cod
 python scripts/run_train.py --config configs/default.yaml
 python scripts/run_train.py --config configs/default.yaml --overrides agent.algorithm=trpo seed=7
 
-# bandit comparison (results/bandit_{init}_seed{seed}/; adversarial legacy: bandit_seed{seed}/)
+# bandit comparison (results/bandit_{init}_seed{seed}/; favor_suboptimal legacy: bandit_seed{seed}/)
 python scripts/run_bandit_comparison.py --seed 0
 python scripts/run_bandit_comparison.py --init uniform --seed 1
-python scripts/run_bandit_multi_init.py          # 5 inits × seeds 1–10
-python scripts/summarize_bandit_inits.py         # -> results/bandit_multi_init/
+python scripts/run_bandit_comparison.py --logit-bias 1 0 --seed 1   # mild_optimal
+python scripts/run_bandit_multi_init.py                            # 5 inits × seeds 1–10
+python scripts/summarize_bandit_inits.py                           # -> results/bandit_multi_init/
 
 # eval a checkpoint
 python scripts/run_eval.py --config configs/default.yaml \
@@ -50,15 +51,25 @@ python scripts/run_eval.py --config configs/default.yaml \
 
 | init | logit bias | π₀(opt) |
 |---|---|---|
+| favor_suboptimal | [0, 4] | 0.02 |
 | uniform | [0, 0] | 0.50 |
 | mild_suboptimal | [0, 1] | 0.27 |
-| adversarial | [0, 4] | 0.018 |
-| strong_suboptimal | [0, 6] | 0.0025 |
-| favors_optimal | [0, −4] | 0.98 |
+| mild_optimal | [1, 0] | 0.73 |
+| favor_optimal | [4, 0] | 0.98 |
 
 ![bandit comparison](results/bandit_seed0/bandit_npg_vs_pg_seed0.png)
 
-**Adversarial init, 10 seeds (1–10)** — `results/bandit_multi_seed/`:
+| | final pi(opt) | avg pi(opt) |
+|---|---|---|
+| TRPO (natural PG) | 1.000 | 0.972 |
+| PC actor-critic (TD value head) | 1.000 | 0.554 |
+| PC-REINFORCE (MC returns) | 1.000 | 0.487 |
+| Cleanba PPO | 0.020 | 0.023 |
+| REINFORCE (SGD) | 0.010 | 0.015 |
+
+Both PC variants escape the plateau and converge; the first-order backprop methods stay stuck. Same picture on seed 7 (`results/bandit_seed7/`).
+
+**favor_suboptimal init, 10 seeds (1–10)** — `results/bandit_multi_seed/`:
 
 ![multi-seed learning curves](results/bandit_multi_seed/mean_learning_curve_sem.png)
 
@@ -70,19 +81,21 @@ python scripts/run_eval.py --config configs/default.yaml \
 | Cleanba PPO | 0.026 ± 0.003 | 0/10 | — |
 | REINFORCE | 0.018 ± 0.003 | 0/10 | — |
 
-**5 inits × 10 seeds (60k steps)** — `results/bandit_multi_init/`:
+Re-run: `python scripts/run_bandit_multi_seed.py` then `python scripts/summarize_bandit_seeds.py`.
+
+**5 policy inits × 10 seeds** — sweep π₀ from 2% to 98% via logit bias. Aggregates in `results/bandit_multi_init/`:
 
 ![cross-init final pi](results/bandit_multi_init/cross_init_final_pi.png)
 
 | init (π₀) | TRPO final ± SEM | TRPO ≥0.9 | PC-R final ± SEM | PC-R ≥0.9 | REINFORCE final ± SEM |
 |---|---|---|---|---|---|
-| favors_optimal (0.98) | 0.995 ± 0.005 | 10/10 | 1.000 ± 0.000 | 10/10 | 0.982 ± 0.003 |
-| uniform (0.50) | 0.994 ± 0.006 | 10/10 | 0.996 ± 0.002 | 10/10 | 0.756 ± 0.012 |
-| mild_suboptimal (0.27) | 1.000 ± 0.000 | 10/10 | 0.994 ± 0.004 | 10/10 | 0.559 ± 0.017 |
-| adversarial (0.018) | 0.993 ± 0.007 | 10/10 | 0.968 ± 0.029 | 9/10 | 0.018 ± 0.003 |
-| strong_suboptimal (0.0025) | 0.996 ± 0.004 | 10/10 | 0.904 ± 0.081 | 9/10 | 0.002 ± 0.001 |
+| favor_optimal (98%) | 0.995 ± 0.005 | 10/10 | 1.000 ± 0.000 | 10/10 | 0.982 ± 0.003 |
+| mild_optimal (73%) | 0.992 ± 0.008 | 10/10 | 0.999 ± 0.001 | 10/10 | 0.849 ± 0.009 |
+| uniform (50%) | 0.994 ± 0.006 | 10/10 | 0.996 ± 0.002 | 10/10 | 0.756 ± 0.012 |
+| mild_suboptimal (27%) | 1.000 ± 0.000 | 10/10 | 0.994 ± 0.004 | 10/10 | 0.559 ± 0.017 |
+| favor_suboptimal (2%) | 0.993 ± 0.007 | 10/10 | 0.968 ± 0.029 | 9/10 | 0.018 ± 0.003 |
 
-TRPO reaches π(opt) ≥ 0.9 from every init. PC-REINFORCE succeeds on 9/10 seeds even at π₀ = 0.25%; PC actor-critic drops to 2/10 at strong_suboptimal. First-order REINFORCE and Cleanba PPO only learn when π₀ is already high (favors_optimal); they plateau at all suboptimal starts.
+TRPO and both PC variants reach π(opt) ≥ 0.9 from every start we tried. Vanilla REINFORCE and Cleanba PPO only learn when π₀ is already high — they plateau at all suboptimal inits. PC takes longer on bad starts (median ~19k steps from uniform, ~38k from favor_suboptimal) but still gets there; TRPO stays fast down to π₀ ≈ 2%.
 
 Re-run: `python scripts/run_bandit_multi_init.py` then `python scripts/summarize_bandit_inits.py`.
 
