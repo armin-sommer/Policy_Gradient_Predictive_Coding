@@ -58,6 +58,20 @@ python scripts/run_eval.py --config configs/default.yaml \
 
 Both PC variants escape the plateau and converge; the first-order backprop methods stay stuck. Same picture on seed 7 (`results/bandit_seed7/`). The PC policies are trained entirely with `jpc.make_pc_step` on advantage-weighted output targets — no backprop; the actor-critic variant bootstraps from a PC-trained value head instead of Monte Carlo returns.
 
+**10 seeds (1–10, 60k env steps each)** — aggregate in `results/bandit_multi_seed/`:
+
+![multi-seed learning curves](results/bandit_multi_seed/mean_learning_curve_sem.png)
+
+| | final π(opt) mean ± SEM | success (≥0.9) | steps to ≥0.9 (median) |
+|---|---|---|---|
+| TRPO | 0.993 ± 0.007 | 10/10 | 6000 |
+| PC-REINFORCE | 0.968 ± 0.029 | 9/10 | 38000 |
+| PC actor-critic | 0.969 ± 0.024 | 9/10 | 44000 |
+| Cleanba PPO | 0.026 ± 0.003 | 0/10 | — |
+| REINFORCE | 0.018 ± 0.003 | 0/10 | — |
+
+Re-run: `python scripts/run_bandit_multi_seed.py` then `python scripts/summarize_bandit_seeds.py`.
+
 ## TODO
 
 - scale PCPG to Procgen (multi-step TD)
