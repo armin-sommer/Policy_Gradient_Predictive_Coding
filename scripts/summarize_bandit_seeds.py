@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SEEDS = list(range(1, 11))
+DEFAULT_SEEDS = [0] + list(range(1, 7)) + [7] + list(range(8, 22))
 
 ALGO_ORDER = [
     "reinforce",

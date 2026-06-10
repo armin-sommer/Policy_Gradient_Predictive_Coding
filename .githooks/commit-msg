@@ -1,5 +1,5 @@
 #!/bin/sh
-#new
+# Strip agent Co-authored-by trailers before the commit lands on GitHub.
 msg="$1"
 [ -f "$msg" ] || exit 0
 tmp="${msg}.$$"

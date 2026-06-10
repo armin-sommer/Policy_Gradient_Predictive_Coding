@@ -11,7 +11,7 @@ src/
   networks/              # MLP/CNN, distributions (from PolicyGradientsJax)
   env/                   # Procgen wrapper + 2-armed bandit
 configs/                 # YAML configs
-scripts/                 # run_train.py, run_eval.py, run_bandit_comparison.py
+scripts/                 # run_train.py, run_eval.py, run_bandit_comparison.py, run_bandit_multi_seed.py
 results/                 # committed plots, logs, CSVs
 ```
 
@@ -36,6 +36,8 @@ python scripts/run_train.py --config configs/default.yaml --overrides agent.algo
 # bandit comparison (plot + logs go to results/bandit_seed{seed}/)
 python scripts/run_bandit_comparison.py --seed 0
 python scripts/run_bandit_comparison.py --algos reinforce trpo --seed 0
+python scripts/run_bandit_multi_seed.py          # seeds 1-6, 8-21, --no-plot
+python scripts/summarize_bandit_seeds.py         # -> results/bandit_multi_seed/
 
 # eval a checkpoint
 python scripts/run_eval.py --config configs/default.yaml \
@@ -57,6 +59,8 @@ python scripts/run_eval.py --config configs/default.yaml \
 | REINFORCE (SGD) | 0.010 | 0.015 |
 
 Both PC variants escape the plateau and converge; the first-order backprop methods stay stuck. Same picture on seed 7 (`results/bandit_seed7/`). The PC policies are trained entirely with `jpc.make_pc_step` on advantage-weighted output targets — no backprop; the actor-critic variant bootstraps from a PC-trained value head instead of Monte Carlo returns.
+
+22 seeds (0–21): TRPO hits final π(opt) ≥ 0.9 every time; PC-REINFORCE 21/22, PC actor-critic 20/22. REINFORCE and Cleanba PPO never break past ~3%. Aggregates in `results/bandit_multi_seed/` (mean final π(opt): TRPO 0.996, PC-REINFORCE 0.985, PC actor-critic 0.975).
 
 **10 seeds (1–10, 60k env steps each)** — aggregate in `results/bandit_multi_seed/`:
 
