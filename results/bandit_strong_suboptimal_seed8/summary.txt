@@ -1,6 +1,0 @@
-init=strong_suboptimal logit_bias=[0.0, 6.0] pi0=0.0025 seed=8 total_steps=60000
-REINFORCE (vanilla PG, SGD)      final pi(opt) = 0.000   avg pi(opt) = 0.001
-TRPO (natural PG)                final pi(opt) = 1.000   avg pi(opt) = 0.963
-Cleanba PPO (Adam)               final pi(opt) = 0.000   avg pi(opt) = 0.001
-PC-REINFORCE (jpc, MC returns)   final pi(opt) = 1.000   avg pi(opt) = 0.454
-PC actor-critic (jpc, TD value head) final pi(opt) = 0.350   avg pi(opt) = 0.045
