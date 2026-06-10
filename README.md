@@ -10,7 +10,8 @@ On-policy policy gradient algorithms in JAX/Flax for investigating predictive co
 | PPO | `src/backprop_algorithms/ppo.py` | Proximal Policy Optimization (clipped surrogate) |
 | Cleanba PPO | `src/backprop_algorithms/cleanba_ppo.py` | Cleanba/CleanRL-style PPO baseline (GAE once per iteration, flattened minibatches, clipped value loss, Adam eps 1e-5) |
 | TRPO | `src/backprop_algorithms/trpo.py` | Trust Region Policy Optimization (conjugate gradient + line search) |
-| PC-REINFORCE | `src/pc_algorithms/pc_reinforce.py` | REINFORCE with a predictive-coding-trained policy ([jpc](https://github.com/thebuckleylab/jpc)): advantage-weighted output targets, no backprop |
+| PC-REINFORCE | `src/pc_algorithms/pc_reinforce.py` | REINFORCE with a predictive-coding-trained policy ([jpc](https://github.com/thebuckleylab/jpc)): advantage-weighted output targets, Monte Carlo returns, no backprop |
+| PC actor-critic | `src/pc_algorithms/pc_actor_critic.py` | PC policy + PC value head: critic trained on one-step TD targets (bootstrapped, no Monte Carlo), TD-error advantages for the actor |
 | PCPG | `src/backprop_algorithms/pcpg.py` | Predictive Coding Policy Gradients (WIP) |
 
 PPO, TRPO, and REINFORCE are adapted from [PolicyGradientsJax](https://github.com/Matt00n/PolicyGradientsJax).
@@ -81,7 +82,8 @@ The policy is a softmax over logits, initialized **adversarially** (`agent.polic
 | Algorithm | final pi(opt) | avg pi(opt) | behavior |
 |-----------|---------------|-------------|----------|
 | TRPO (natural PG) | 1.000 | 0.972 | escapes the plateau in ~3 updates |
-| PC-REINFORCE (jpc) | 1.000 | 0.487 | escapes gradually, converged by ~50k steps |
+| PC actor-critic (jpc, TD value head) | 1.000 | 0.554 | escapes gradually, fastest of the PC variants |
+| PC-REINFORCE (jpc, MC returns) | 1.000 | 0.487 | escapes gradually, converged by ~50k steps |
 | Cleanba PPO (Adam) | 0.020 | 0.023 | pinned to the plateau |
 | REINFORCE (SGD) | 0.010 | 0.015 | pinned to the plateau |
 
@@ -107,6 +109,15 @@ python scripts/run_train.py --config configs/bandit.yaml   # cleanba_ppo by defa
 1. rolls out the bandit and computes advantages `A = r - mean(r)`,
 2. builds advantage-weighted output targets `y = logits + alpha * A(a) * (onehot(a) - pi)`, chosen so the PC output error `y - logits` equals the REINFORCE gradient w.r.t. the logits,
 3. calls `jpc.make_pc_step`, which relaxes the network activities to equilibrium (diffrax ODE solver) and applies local PC weight updates at that equilibrium.
+
+### PC actor-critic (value head, no Monte Carlo returns)
+
+`src/pc_algorithms/pc_actor_critic.py` replaces the Monte Carlo baseline with a second PCN — a value head — also trained purely with predictive coding:
+
+1. the critic regresses on bootstrapped one-step TD targets `y_V = r + gamma * (1 - done) * V(s')` (a natively supervised PC problem: `jpc.make_pc_step(output=y_V, input=s)`),
+2. the actor uses the TD error `A = y_V - V(s)` as the advantage in the same advantage-weighted target construction as PC-REINFORCE.
+
+On the bandit it edges out PC-REINFORCE (avg pi(opt) 0.554 vs 0.487): the learned baseline cuts gradient variance. The TD machinery matters more on multi-step environments, where MC returns are high-variance.
 
 ## Dependencies
 

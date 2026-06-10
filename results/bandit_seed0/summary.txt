@@ -2,4 +2,5 @@ seed=0 total_steps=60000
 REINFORCE (vanilla PG, SGD)      final pi(opt) = 0.010   avg pi(opt) = 0.015
 TRPO (natural PG)                final pi(opt) = 1.000   avg pi(opt) = 0.972
 Cleanba PPO (Adam)               final pi(opt) = 0.020   avg pi(opt) = 0.023
-PC-REINFORCE (jpc)               final pi(opt) = 1.000   avg pi(opt) = 0.487
+PC-REINFORCE (jpc, MC returns)   final pi(opt) = 1.000   avg pi(opt) = 0.487
+PC actor-critic (jpc, TD value head) final pi(opt) = 1.000   avg pi(opt) = 0.554

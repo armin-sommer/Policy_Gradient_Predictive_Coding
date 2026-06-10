@@ -52,6 +52,7 @@ ALGO_MODULES = {
     "reinforce": "backprop_algorithms.reinforce",
     "cleanba_ppo": "backprop_algorithms.cleanba_ppo",
     "pc_reinforce": "pc_algorithms.pc_reinforce",
+    "pc_actor_critic": "pc_algorithms.pc_actor_critic",
 }
 
 

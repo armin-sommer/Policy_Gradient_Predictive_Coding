@@ -38,13 +38,15 @@ ALGO_MODULES = {
     "trpo": "backprop_algorithms.trpo",
     "cleanba_ppo": "backprop_algorithms.cleanba_ppo",
     "pc_reinforce": "pc_algorithms.pc_reinforce",
+    "pc_actor_critic": "pc_algorithms.pc_actor_critic",
 }
 
 LABELS = {
     "reinforce": "REINFORCE (vanilla PG, SGD)",
     "trpo": "TRPO (natural PG)",
     "cleanba_ppo": "Cleanba PPO (Adam)",
-    "pc_reinforce": "PC-REINFORCE (jpc)",
+    "pc_reinforce": "PC-REINFORCE (jpc, MC returns)",
+    "pc_actor_critic": "PC actor-critic (jpc, TD value head)",
 }
 
 
@@ -114,6 +116,12 @@ def run_algo(algo, seed, total_timesteps, log_dir=None):
         Config.num_envs = 8
         Config.unroll_length = 250
         Config.learning_rate = 1e-2
+        Config.target_scale = 1.0
+    elif algo == "pc_actor_critic":
+        Config.num_envs = 8
+        Config.unroll_length = 250
+        Config.learning_rate = 1e-2
+        Config.value_learning_rate = 1e-2
         Config.target_scale = 1.0
 
     capture = MetricsCapture()
