@@ -1,21 +1,4 @@
-"""PC actor-critic: predictive coding policy gradient with a value head.
-
-Unlike PC-REINFORCE (Monte Carlo returns with a batch-mean baseline), this
-trains *two* predictive coding networks with jpc and bootstraps from the
-critic instead of using Monte Carlo returns:
-
-  - critic (value head): PCN regression on one-step TD targets
-        y_V = r + gamma * (1 - done) * V(s')
-    trained natively with jpc (PC inference + local weight updates on an
-    MSE output layer).
-  - actor (policy): PCN trained with advantage-weighted output targets
-        y_pi = logits + target_scale * A * (onehot(a) - pi),
-    where A = y_V - V(s) is the TD error, so the PC output error equals the
-    advantage actor-critic gradient w.r.t. the logits.
-
-No backprop is used for either network. Follows the repo's Config + main()
-convention so scripts/run_train.py can dispatch to it.
-"""
+"""PC actor-critic — jpc policy + value head, TD(0) advantages."""
 
 import logging
 import os
@@ -41,7 +24,6 @@ class Config:
     write_logs_to_file = False
     save_model = False
 
-    # environment (bandit; any discrete env with flat obs works)
     env_name = 'bandit'
     num_envs = 8
     num_train_levels = 200
@@ -56,23 +38,22 @@ class Config:
 
     # algorithm hyperparameters
     total_timesteps = 60_000
-    unroll_length = 250            # env steps per update (x num_envs samples)
+    unroll_length = 250
     gamma = 0.99
-    learning_rate = 1e-2           # actor (policy) PC parameter optimiser
-    value_learning_rate = 1e-2     # critic (value) PC parameter optimiser
-    target_scale = 1.0             # scale of the advantage-weighted policy target
-    pc_steps_per_update = 1        # jpc.make_pc_step calls per net per batch
-    max_t1 = 20                    # jpc inference (activity relaxation) horizon
+    learning_rate = 1e-2
+    value_learning_rate = 1e-2
+    target_scale = 1.0
+    pc_steps_per_update = 1
+    max_t1 = 20
 
-    # PCN architectures (jpc.make_mlp)
     width = 32
     depth = 2
     act_fn = 'relu'
-    policy_init_logit_bias = None  # e.g. [0.0, 4.0] for the bandit plateau init
+    policy_init_logit_bias = None
 
 
 def _set_final_layer(model, logit_bias):
-    """Zero the PCN's final Linear kernel and set its bias (adversarial init)."""
+    """Zero final layer kernel and set bias."""
     logit_bias = jnp.asarray(logit_bias, dtype=jnp.float32)
     final_linear = model[-1].layers[1]
     if final_linear.bias is None:
@@ -122,7 +103,6 @@ def main(_):
     action_size = envs.action_space.n
     obs_dim = int(np.prod(env_state.obs.shape[1:]))
 
-    # actor: PCN over logits
     policy_model = jpc.make_mlp(
         key_policy,
         input_dim=obs_dim,
@@ -135,7 +115,6 @@ def main(_):
     if Config.policy_init_logit_bias is not None:
         policy_model = _set_final_layer(policy_model, Config.policy_init_logit_bias)
 
-    # critic: PCN regression head V(s)
     value_model = jpc.make_mlp(
         key_value,
         input_dim=obs_dim,
@@ -196,20 +175,18 @@ def main(_):
             next_obs_buf.append(_flat_obs(nstate.obs))
             env_state = nstate
 
-        observations = jnp.concatenate([jnp.asarray(o) for o in obs_buf])        # (B, obs)
+        observations = jnp.concatenate([jnp.asarray(o) for o in obs_buf])
         next_observations = jnp.concatenate([jnp.asarray(o) for o in next_obs_buf])
-        actions = jnp.concatenate([jnp.asarray(a) for a in act_buf])             # (B,)
-        logits = jnp.concatenate([jnp.asarray(l) for l in logit_buf])            # (B, A)
-        rewards = jnp.concatenate([jnp.asarray(r) for r in rew_buf])             # (B,)
-        dones = jnp.concatenate([jnp.asarray(d) for d in done_buf])              # (B,)
+        actions = jnp.concatenate([jnp.asarray(a) for a in act_buf])
+        logits = jnp.concatenate([jnp.asarray(l) for l in logit_buf])
+        rewards = jnp.concatenate([jnp.asarray(r) for r in rew_buf])
+        dones = jnp.concatenate([jnp.asarray(d) for d in done_buf])
 
-        # critic: one-step TD targets (bootstrapped, no Monte Carlo returns)
-        values = pcn_forward(value_model, observations).squeeze(-1)              # V(s)
-        next_values = pcn_forward(value_model, next_observations).squeeze(-1)    # V(s')
+        values = pcn_forward(value_model, observations).squeeze(-1)
+        next_values = pcn_forward(value_model, next_observations).squeeze(-1)
         td_targets = rewards + Config.gamma * (1.0 - dones) * next_values
-        advantages = td_targets - values                                          # TD error
+        advantages = td_targets - values
 
-        # actor: advantage-weighted PC output targets (epsilon = A2C logit gradient)
         pi = jax.nn.softmax(logits)
         onehot = jax.nn.one_hot(actions, action_size)
         policy_targets = logits + Config.target_scale * advantages[:, None] * (onehot - pi)

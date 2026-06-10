@@ -44,13 +44,12 @@ class Config:
     write_logs_to_file = False
     save_model = False
 
-    # environment (Procgen or bandit)
     env_name = 'coinrun'
     num_envs = 8
     num_train_levels = 200
     distribution_mode = 'easy'
-    arm_means = (1.0, 0.9)          # bandit only
-    deterministic_rewards = True    # bandit only
+    arm_means = (1.0, 0.9)
+    deterministic_rewards = True
 
     # eval
     eval_env = True
@@ -197,7 +196,6 @@ def main(_):
     key_policy, key_value = jax.random.split(global_key, 2)
     del global_key
 
-    # create env (Procgen or bandit)
     env_cfg = EnvConfig(
         env_name=Config.env_name,
         num_envs=Config.num_envs,
