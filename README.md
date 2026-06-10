@@ -11,7 +11,7 @@ src/
   networks/              # MLP/CNN, distributions (from PolicyGradientsJax)
   env/                   # Procgen wrapper + 2-armed bandit
 configs/                 # YAML configs
-scripts/                 # run_train.py, run_eval.py, run_bandit_comparison.py
+scripts/                 # run_train.py, run_eval.py, run_bandit_comparison.py, run_bandit_multi_init.py
 results/                 # committed plots, logs, CSVs
 ```
 
@@ -33,9 +33,12 @@ Use JAX 0.4.38 + Flax 0.10.2 + Optax 0.2.4 (jpc needs JAX <= 0.5.2, the pmap cod
 python scripts/run_train.py --config configs/default.yaml
 python scripts/run_train.py --config configs/default.yaml --overrides agent.algorithm=trpo seed=7
 
-# bandit comparison (plot + logs go to results/bandit_seed{seed}/)
+# bandit comparison (results/bandit_{init}_seed{seed}/ or bandit_seed{seed} for favor_suboptimal)
 python scripts/run_bandit_comparison.py --seed 0
-python scripts/run_bandit_comparison.py --algos reinforce trpo --seed 0
+python scripts/run_bandit_comparison.py --init uniform --seed 1
+python scripts/run_bandit_comparison.py --logit-bias 1 0 --seed 1   # mild_optimal
+python scripts/run_bandit_multi_init.py                            # 5 inits × seeds 1–10
+python scripts/summarize_bandit_inits.py                           # -> results/bandit_multi_init/
 
 # eval a checkpoint
 python scripts/run_eval.py --config configs/default.yaml \
@@ -71,6 +74,20 @@ Both PC variants escape the plateau and converge; the first-order backprop metho
 | REINFORCE | 0.018 ± 0.003 | 0/10 | — |
 
 Re-run: `python scripts/run_bandit_multi_seed.py` then `python scripts/summarize_bandit_seeds.py`.
+
+**5 policy inits × 10 seeds** — `results/bandit_multi_init/` (presets in `scripts/bandit_inits.py`):
+
+![cross-init final pi](results/bandit_multi_init/cross_init_final_pi.png)
+
+| init (π₀) | TRPO final ± SEM | TRPO ≥0.9 | PC-R final ± SEM | PC-R ≥0.9 | REINFORCE final ± SEM |
+|---|---|---|---|---|---|
+| favor_optimal (98%) | 0.995 ± 0.005 | 10/10 | 1.000 ± 0.000 | 10/10 | 0.982 ± 0.003 |
+| mild_optimal (73%) | 0.992 ± 0.008 | 10/10 | 0.999 ± 0.001 | 10/10 | 0.849 ± 0.009 |
+| uniform (50%) | 0.994 ± 0.006 | 10/10 | 0.996 ± 0.002 | 10/10 | 0.756 ± 0.012 |
+| mild_suboptimal (27%) | 1.000 ± 0.000 | 10/10 | 0.994 ± 0.004 | 10/10 | 0.559 ± 0.017 |
+| favor_suboptimal (2%) | 0.993 ± 0.007 | 10/10 | 0.968 ± 0.029 | 9/10 | 0.018 ± 0.003 |
+
+TRPO and both PC variants reach π(opt) ≥ 0.9 from every init we tried; first-order REINFORCE and PPO only succeed when the policy already favors the optimal arm. The harder the suboptimal start, the slower PC learns (median ~19k steps at uniform vs ~38k at favor_suboptimal), but TRPO stays fast until π₀ drops below ~3%.
 
 ## TODO
 

@@ -1,0 +1,174 @@
+bandit multi-init summary (seeds [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+
+init presets (pi0 = sigmoid(b0-b1), arm 0 optimal):
+  uniform: bias=[0.0, 0.0]  pi0=0.5000
+  mild_suboptimal: bias=[0.0, 1.0]  pi0=0.2689
+  favor_suboptimal: bias=[0.0, 4.0]  pi0=0.0180
+  mild_optimal: bias=[1.0, 0.0]  pi0=0.7311
+  favor_optimal: bias=[4.0, 0.0]  pi0=0.9820
+
+
+=== uniform (pi0=0.5000, 10 seeds: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) ===
+
+REINFORCE
+  final pi(opt): 0.756 ± 0.012 (std 0.038, med 0.770, 95% CI [0.728, 0.784])
+  avg pi(opt):   0.648 ± 0.005 (std 0.016, med 0.650, 95% CI [0.636, 0.660])
+  success (final >= 0.9): 0% (0/10)
+  steps to pi >= 0.9: n/a
+
+TRPO
+  final pi(opt): 0.994 ± 0.006 (std 0.019, med 1.000, 95% CI [0.980, 1.008])
+  avg pi(opt):   0.988 ± 0.003 (std 0.010, med 0.992, 95% CI [0.980, 0.995])
+  success (final >= 0.9): 100% (10/10)
+  steps to pi >= 0.9: mean 2000, median 2000 (10/10 seeds)
+
+Cleanba PPO
+  final pi(opt): 0.618 ± 0.010 (std 0.031, med 0.615, 95% CI [0.596, 0.640])
+  avg pi(opt):   0.562 ± 0.003 (std 0.009, med 0.564, 95% CI [0.556, 0.568])
+  success (final >= 0.9): 0% (0/10)
+  steps to pi >= 0.9: n/a
+
+PC-REINFORCE
+  final pi(opt): 0.996 ± 0.002 (std 0.007, med 1.000, 95% CI [0.992, 1.001])
+  avg pi(opt):   0.903 ± 0.015 (std 0.046, med 0.918, 95% CI [0.869, 0.936])
+  success (final >= 0.9): 100% (10/10)
+  steps to pi >= 0.9: mean 20400, median 19000 (10/10 seeds)
+
+PC actor-critic
+  final pi(opt): 0.998 ± 0.001 (std 0.003, med 0.998, 95% CI [0.996, 0.999])
+  avg pi(opt):   0.910 ± 0.008 (std 0.026, med 0.916, 95% CI [0.891, 0.929])
+  success (final >= 0.9): 100% (10/10)
+  steps to pi >= 0.9: mean 19200, median 18000 (10/10 seeds)
+
+
+=== mild_suboptimal (pi0=0.2689, 10 seeds: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) ===
+
+REINFORCE
+  final pi(opt): 0.559 ± 0.017 (std 0.055, med 0.575, 95% CI [0.519, 0.599])
+  avg pi(opt):   0.407 ± 0.006 (std 0.018, med 0.411, 95% CI [0.394, 0.420])
+  success (final >= 0.9): 0% (0/10)
+  steps to pi >= 0.9: n/a
+
+TRPO
+  final pi(opt): 1.000 ± 0.000 (std 0.000, med 1.000, 95% CI [1.000, 1.000])
+  avg pi(opt):   0.987 ± 0.002 (std 0.006, med 0.990, 95% CI [0.982, 0.991])
+  success (final >= 0.9): 100% (10/10)
+  steps to pi >= 0.9: mean 4000, median 4000 (10/10 seeds)
+
+Cleanba PPO
+  final pi(opt): 0.378 ± 0.006 (std 0.018, med 0.375, 95% CI [0.365, 0.391])
+  avg pi(opt):   0.320 ± 0.002 (std 0.007, med 0.318, 95% CI [0.314, 0.325])
+  success (final >= 0.9): 0% (0/10)
+  steps to pi >= 0.9: n/a
+
+PC-REINFORCE
+  final pi(opt): 0.994 ± 0.004 (std 0.013, med 1.000, 95% CI [0.985, 1.004])
+  avg pi(opt):   0.826 ± 0.024 (std 0.077, med 0.850, 95% CI [0.770, 0.882])
+  success (final >= 0.9): 100% (10/10)
+  steps to pi >= 0.9: mean 25800, median 24000 (10/10 seeds)
+
+PC actor-critic
+  final pi(opt): 0.998 ± 0.001 (std 0.003, med 0.998, 95% CI [0.996, 0.999])
+  avg pi(opt):   0.831 ± 0.013 (std 0.042, med 0.824, 95% CI [0.800, 0.861])
+  success (final >= 0.9): 100% (10/10)
+  steps to pi >= 0.9: mean 25400, median 25000 (10/10 seeds)
+
+
+=== favor_suboptimal (pi0=0.0180, 10 seeds: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) ===
+
+REINFORCE
+  final pi(opt): 0.018 ± 0.003 (std 0.009, med 0.015, 95% CI [0.011, 0.025])
+  avg pi(opt):   0.017 ± 0.000 (std 0.001, med 0.016, 95% CI [0.016, 0.017])
+  success (final >= 0.9): 0% (0/10)
+  steps to pi >= 0.9: n/a
+
+TRPO
+  final pi(opt): 0.993 ± 0.007 (std 0.022, med 1.000, 95% CI [0.977, 1.009])
+  avg pi(opt):   0.965 ± 0.001 (std 0.004, med 0.965, 95% CI [0.962, 0.968])
+  success (final >= 0.9): 100% (10/10)
+  steps to pi >= 0.9: mean 5800, median 6000 (10/10 seeds)
+
+Cleanba PPO
+  final pi(opt): 0.026 ± 0.003 (std 0.011, med 0.030, 95% CI [0.018, 0.034])
+  avg pi(opt):   0.021 ± 0.001 (std 0.003, med 0.020, 95% CI [0.019, 0.023])
+  success (final >= 0.9): 0% (0/10)
+  steps to pi >= 0.9: n/a
+
+PC-REINFORCE
+  final pi(opt): 0.968 ± 0.029 (std 0.091, med 1.000, 95% CI [0.901, 1.034])
+  avg pi(opt):   0.530 ± 0.044 (std 0.138, med 0.571, 95% CI [0.429, 0.631])
+  success (final >= 0.9): 90% (9/10)
+  steps to pi >= 0.9: mean 38222, median 38000 (9/10 seeds)
+
+PC actor-critic
+  final pi(opt): 0.969 ± 0.024 (std 0.075, med 0.992, 95% CI [0.914, 1.024])
+  avg pi(opt):   0.452 ± 0.048 (std 0.152, med 0.467, 95% CI [0.341, 0.563])
+  success (final >= 0.9): 90% (9/10)
+  steps to pi >= 0.9: mean 44000, median 44000 (9/10 seeds)
+
+
+=== mild_optimal (pi0=0.7311, 10 seeds: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) ===
+
+REINFORCE
+  final pi(opt): 0.849 ± 0.009 (std 0.029, med 0.850, 95% CI [0.828, 0.870])
+  avg pi(opt):   0.805 ± 0.003 (std 0.009, med 0.808, 95% CI [0.799, 0.812])
+  success (final >= 0.9): 0% (0/10)
+  steps to pi >= 0.9: mean 54000, median 54000 (1/10 seeds)
+
+TRPO
+  final pi(opt): 0.992 ± 0.008 (std 0.025, med 1.000, 95% CI [0.974, 1.010])
+  avg pi(opt):   0.993 ± 0.003 (std 0.008, med 0.996, 95% CI [0.987, 0.999])
+  success (final >= 0.9): 100% (10/10)
+  steps to pi >= 0.9: mean 2000, median 2000 (10/10 seeds)
+
+Cleanba PPO
+  final pi(opt): 0.816 ± 0.007 (std 0.022, med 0.820, 95% CI [0.800, 0.832])
+  avg pi(opt):   0.777 ± 0.001 (std 0.005, med 0.778, 95% CI [0.774, 0.781])
+  success (final >= 0.9): 0% (0/10)
+  steps to pi >= 0.9: n/a
+
+PC-REINFORCE
+  final pi(opt): 0.999 ± 0.001 (std 0.002, med 1.000, 95% CI [0.997, 1.001])
+  avg pi(opt):   0.955 ± 0.007 (std 0.022, med 0.962, 95% CI [0.939, 0.971])
+  success (final >= 0.9): 100% (10/10)
+  steps to pi >= 0.9: mean 12200, median 11000 (10/10 seeds)
+
+PC actor-critic
+  final pi(opt): 0.999 ± 0.001 (std 0.002, med 1.000, 95% CI [0.997, 1.001])
+  avg pi(opt):   0.959 ± 0.004 (std 0.012, med 0.962, 95% CI [0.950, 0.968])
+  success (final >= 0.9): 100% (10/10)
+  steps to pi >= 0.9: mean 11600, median 10000 (10/10 seeds)
+
+
+=== favor_optimal (pi0=0.9820, 10 seeds: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) ===
+
+REINFORCE
+  final pi(opt): 0.982 ± 0.003 (std 0.010, med 0.980, 95% CI [0.974, 0.990])
+  avg pi(opt):   0.980 ± 0.000 (std 0.002, med 0.981, 95% CI [0.979, 0.982])
+  success (final >= 0.9): 100% (10/10)
+  steps to pi >= 0.9: mean 2000, median 2000 (10/10 seeds)
+
+TRPO
+  final pi(opt): 0.995 ± 0.005 (std 0.016, med 1.000, 95% CI [0.983, 1.007])
+  avg pi(opt):   0.995 ± 0.002 (std 0.007, med 0.999, 95% CI [0.990, 1.000])
+  success (final >= 0.9): 100% (10/10)
+  steps to pi >= 0.9: mean 2000, median 2000 (10/10 seeds)
+
+Cleanba PPO
+  final pi(opt): 0.987 ± 0.002 (std 0.005, med 0.990, 95% CI [0.983, 0.991])
+  avg pi(opt):   0.983 ± 0.000 (std 0.001, med 0.983, 95% CI [0.982, 0.984])
+  success (final >= 0.9): 100% (10/10)
+  steps to pi >= 0.9: mean 2000, median 2000 (10/10 seeds)
+
+PC-REINFORCE
+  final pi(opt): 1.000 ± 0.000 (std 0.000, med 1.000, 95% CI [1.000, 1.000])
+  avg pi(opt):   0.998 ± 0.000 (std 0.001, med 0.998, 95% CI [0.997, 0.998])
+  success (final >= 0.9): 100% (10/10)
+  steps to pi >= 0.9: mean 2000, median 2000 (10/10 seeds)
+
+PC actor-critic
+  final pi(opt): 1.000 ± 0.001 (std 0.002, med 1.000, 95% CI [0.998, 1.001])
+  avg pi(opt):   0.996 ± 0.001 (std 0.002, med 0.996, 95% CI [0.995, 0.997])
+  success (final >= 0.9): 100% (10/10)
+  steps to pi >= 0.9: mean 2000, median 2000 (10/10 seeds)
+
