@@ -1,0 +1,92 @@
+|param: value|
+|experiment_name:  pc_reinforce|
+|seed:  9|
+|write_logs_to_file:  False|
+|save_model:  False|
+|env_name:  bandit|
+|num_envs:  8|
+|num_train_levels:  200|
+|distribution_mode:  easy|
+|arm_means:  (1.0, 0.9)|
+|deterministic_rewards:  True|
+|eval_env:  True|
+|num_eval_episodes:  200|
+|eval_every:  1|
+|total_timesteps:  60000|
+|unroll_length:  250|
+|learning_rate:  0.01|
+|target_scale:  1.0|
+|pc_steps_per_update:  1|
+|max_t1:  20|
+|width:  32|
+|depth:  2|
+|act_fn:  relu|
+|policy_init_logit_bias:  [0.0, 4.0]|
+|use_cnn:  False|
+|policy_hidden_layer_sizes:  ()|
+|value_hidden_layer_sizes:  ()|
+|anneal_lr:  False|
+|entropy_cost:  0.0|
+|deterministic_eval:  False|
+|gamma:  0.99|
+{'training/total_steps': 2000, 'training/updates': 1, 'training/walltime': np.float64(1.501), 'training/update_time': np.float64(1.501), 'training/pc_loss': 0.0001312566309934482, 'training/mean_reward': 0.9013996720314026, 'training/mean_advantage_abs': 0.002760504838079214}
+{'eval/num_episodes': 200, 'eval/mean_score': np.float64(0.9015), 'eval/std_score': np.float64(0.0122), 'eval/mean_episode_length': np.float64(1.0)}
+{'training/total_steps': 4000, 'training/updates': 2, 'training/walltime': np.float64(1.799), 'training/update_time': np.float64(0.109), 'training/pc_loss': 0.00021849354379810393, 'training/mean_reward': 0.9023997187614441, 'training/mean_advantage_abs': 0.004684555809944868}
+{'eval/num_episodes': 200, 'eval/mean_score': np.float64(0.9035), 'eval/std_score': np.float64(0.0184), 'eval/mean_episode_length': np.float64(1.0)}
+{'training/total_steps': 6000, 'training/updates': 3, 'training/walltime': np.float64(1.907), 'training/update_time': np.float64(0.107), 'training/pc_loss': 0.0002457491646055132, 'training/mean_reward': 0.9027495384216309, 'training/mean_advantage_abs': 0.005348337814211845}
+{'eval/num_episodes': 200, 'eval/mean_score': np.float64(0.905), 'eval/std_score': np.float64(0.0218), 'eval/mean_episode_length': np.float64(1.0)}
+{'training/total_steps': 8000, 'training/updates': 4, 'training/walltime': np.float64(2.018), 'training/update_time': np.float64(0.109), 'training/pc_loss': 0.000335286051267758, 'training/mean_reward': 0.9038996696472168, 'training/mean_advantage_abs': 0.007495520170778036}
+{'eval/num_episodes': 200, 'eval/mean_score': np.float64(0.9055), 'eval/std_score': np.float64(0.0228), 'eval/mean_episode_length': np.float64(1.0)}
+{'training/total_steps': 10000, 'training/updates': 5, 'training/walltime': np.float64(2.129), 'training/update_time': np.float64(0.111), 'training/pc_loss': 0.00036716373870149255, 'training/mean_reward': 0.9043996930122375, 'training/mean_advantage_abs': 0.008412543684244156}
+{'eval/num_episodes': 200, 'eval/mean_score': np.float64(0.907), 'eval/std_score': np.float64(0.0255), 'eval/mean_episode_length': np.float64(1.0)}
+{'training/total_steps': 12000, 'training/updates': 6, 'training/walltime': np.float64(2.304), 'training/update_time': np.float64(0.174), 'training/pc_loss': 0.0004820858594030142, 'training/mean_reward': 0.9061497449874878, 'training/mean_advantage_abs': 0.011543349362909794}
+{'eval/num_episodes': 200, 'eval/mean_score': np.float64(0.905), 'eval/std_score': np.float64(0.0218), 'eval/mean_episode_length': np.float64(1.0)}
+{'training/total_steps': 14000, 'training/updates': 7, 'training/walltime': np.float64(2.413), 'training/update_time': np.float64(0.108), 'training/pc_loss': 0.0005491662304848433, 'training/mean_reward': 0.9074497222900391, 'training/mean_advantage_abs': 0.013789736665785313}
+{'eval/num_episodes': 200, 'eval/mean_score': np.float64(0.9085), 'eval/std_score': np.float64(0.0279), 'eval/mean_episode_length': np.float64(1.0)}
+{'training/total_steps': 16000, 'training/updates': 8, 'training/walltime': np.float64(2.53), 'training/update_time': np.float64(0.116), 'training/pc_loss': 0.0006590090342797339, 'training/mean_reward': 0.9098498225212097, 'training/mean_advantage_abs': 0.017759431153535843}
+{'eval/num_episodes': 200, 'eval/mean_score': np.float64(0.914), 'eval/std_score': np.float64(0.0347), 'eval/mean_episode_length': np.float64(1.0)}
+{'training/total_steps': 18000, 'training/updates': 9, 'training/walltime': np.float64(2.641), 'training/update_time': np.float64(0.109), 'training/pc_loss': 0.0006693908362649381, 'training/mean_reward': 0.9108498096466064, 'training/mean_advantage_abs': 0.019345425069332123}
+{'eval/num_episodes': 200, 'eval/mean_score': np.float64(0.9175), 'eval/std_score': np.float64(0.038), 'eval/mean_episode_length': np.float64(1.0)}
+{'training/total_steps': 20000, 'training/updates': 10, 'training/walltime': np.float64(2.749), 'training/update_time': np.float64(0.107), 'training/pc_loss': 0.0007906485116109252, 'training/mean_reward': 0.9153499007225037, 'training/mean_advantage_abs': 0.025987504050135612}
+{'eval/num_episodes': 200, 'eval/mean_score': np.float64(0.92), 'eval/std_score': np.float64(0.04), 'eval/mean_episode_length': np.float64(1.0)}
+{'training/total_steps': 22000, 'training/updates': 11, 'training/walltime': np.float64(2.858), 'training/update_time': np.float64(0.108), 'training/pc_loss': 0.0008507994934916496, 'training/mean_reward': 0.9207998514175415, 'training/mean_advantage_abs': 0.032947130501270294}
+{'eval/num_episodes': 200, 'eval/mean_score': np.float64(0.919), 'eval/std_score': np.float64(0.0392), 'eval/mean_episode_length': np.float64(1.0)}
+{'training/total_steps': 24000, 'training/updates': 12, 'training/walltime': np.float64(2.972), 'training/update_time': np.float64(0.113), 'training/pc_loss': 0.0008148475899361074, 'training/mean_reward': 0.9251499176025391, 'training/mean_advantage_abs': 0.03764953091740608}
+{'eval/num_episodes': 200, 'eval/mean_score': np.float64(0.932), 'eval/std_score': np.float64(0.0466), 'eval/mean_episode_length': np.float64(1.0)}
+{'training/total_steps': 26000, 'training/updates': 13, 'training/walltime': np.float64(3.083), 'training/update_time': np.float64(0.111), 'training/pc_loss': 0.0007576043135486543, 'training/mean_reward': 0.9328499436378479, 'training/mean_advantage_abs': 0.04411756247282028}
+{'eval/num_episodes': 200, 'eval/mean_score': np.float64(0.939), 'eval/std_score': np.float64(0.0488), 'eval/mean_episode_length': np.float64(1.0)}
+{'training/total_steps': 28000, 'training/updates': 14, 'training/walltime': np.float64(3.194), 'training/update_time': np.float64(0.11), 'training/pc_loss': 0.0006724515114910901, 'training/mean_reward': 0.9403999447822571, 'training/mean_advantage_abs': 0.04815683141350746}
+{'eval/num_episodes': 200, 'eval/mean_score': np.float64(0.943), 'eval/std_score': np.float64(0.0495), 'eval/mean_episode_length': np.float64(1.0)}
+{'training/total_steps': 30000, 'training/updates': 15, 'training/walltime': np.float64(3.303), 'training/update_time': np.float64(0.109), 'training/pc_loss': 0.000625442189630121, 'training/mean_reward': 0.9478500485420227, 'training/mean_advantage_abs': 0.049907587468624115}
+{'eval/num_episodes': 200, 'eval/mean_score': np.float64(0.9595), 'eval/std_score': np.float64(0.0491), 'eval/mean_episode_length': np.float64(1.0)}
+{'training/total_steps': 32000, 'training/updates': 16, 'training/walltime': np.float64(3.414), 'training/update_time': np.float64(0.11), 'training/pc_loss': 0.0006571832927875221, 'training/mean_reward': 0.9566999673843384, 'training/mean_advantage_abs': 0.049102213233709335}
+{'eval/num_episodes': 200, 'eval/mean_score': np.float64(0.9705), 'eval/std_score': np.float64(0.0456), 'eval/mean_episode_length': np.float64(1.0)}
+{'training/total_steps': 34000, 'training/updates': 17, 'training/walltime': np.float64(3.527), 'training/update_time': np.float64(0.112), 'training/pc_loss': 0.0007427209056913853, 'training/mean_reward': 0.9686999320983887, 'training/mean_advantage_abs': 0.043006233870983124}
+{'eval/num_episodes': 200, 'eval/mean_score': np.float64(0.9765), 'eval/std_score': np.float64(0.0424), 'eval/mean_episode_length': np.float64(1.0)}
+{'training/total_steps': 36000, 'training/updates': 18, 'training/walltime': np.float64(3.639), 'training/update_time': np.float64(0.111), 'training/pc_loss': 0.0008209635270759463, 'training/mean_reward': 0.9760499596595764, 'training/mean_advantage_abs': 0.03642798587679863}
+{'eval/num_episodes': 200, 'eval/mean_score': np.float64(0.982), 'eval/std_score': np.float64(0.0384), 'eval/mean_episode_length': np.float64(1.0)}
+{'training/total_steps': 38000, 'training/updates': 19, 'training/walltime': np.float64(3.748), 'training/update_time': np.float64(0.108), 'training/pc_loss': 0.0007933247252367437, 'training/mean_reward': 0.9835500121116638, 'training/mean_advantage_abs': 0.027487946674227715}
+{'eval/num_episodes': 200, 'eval/mean_score': np.float64(0.991), 'eval/std_score': np.float64(0.0286), 'eval/mean_episode_length': np.float64(1.0)}
+{'training/total_steps': 40000, 'training/updates': 20, 'training/walltime': np.float64(3.857), 'training/update_time': np.float64(0.108), 'training/pc_loss': 0.0007687231409363449, 'training/mean_reward': 0.986950159072876, 'training/mean_advantage_abs': 0.022693831473588943}
+{'eval/num_episodes': 200, 'eval/mean_score': np.float64(0.992), 'eval/std_score': np.float64(0.0271), 'eval/mean_episode_length': np.float64(1.0)}
+{'training/total_steps': 42000, 'training/updates': 21, 'training/walltime': np.float64(3.963), 'training/update_time': np.float64(0.104), 'training/pc_loss': 0.0006120774196460843, 'training/mean_reward': 0.9913500547409058, 'training/mean_advantage_abs': 0.015803508460521698}
+{'eval/num_episodes': 200, 'eval/mean_score': np.float64(0.9945), 'eval/std_score': np.float64(0.0228), 'eval/mean_episode_length': np.float64(1.0)}
+{'training/total_steps': 44000, 'training/updates': 22, 'training/walltime': np.float64(4.07), 'training/update_time': np.float64(0.106), 'training/pc_loss': 0.00043732713675126433, 'training/mean_reward': 0.9945501089096069, 'training/mean_advantage_abs': 0.010305855423212051}
+{'eval/num_episodes': 200, 'eval/mean_score': np.float64(0.9955), 'eval/std_score': np.float64(0.0207), 'eval/mean_episode_length': np.float64(1.0)}
+{'training/total_steps': 46000, 'training/updates': 23, 'training/walltime': np.float64(4.18), 'training/update_time': np.float64(0.109), 'training/pc_loss': 0.0002995729446411133, 'training/mean_reward': 0.9965500831604004, 'training/mean_advantage_abs': 0.00666187284514308}
+{'eval/num_episodes': 200, 'eval/mean_score': np.float64(0.9985), 'eval/std_score': np.float64(0.0122), 'eval/mean_episode_length': np.float64(1.0)}
+{'training/total_steps': 48000, 'training/updates': 24, 'training/walltime': np.float64(4.288), 'training/update_time': np.float64(0.108), 'training/pc_loss': 0.00019637082004919648, 'training/mean_reward': 0.9978500604629517, 'training/mean_advantage_abs': 0.0042074937373399734}
+{'eval/num_episodes': 200, 'eval/mean_score': np.float64(0.9995), 'eval/std_score': np.float64(0.0071), 'eval/mean_episode_length': np.float64(1.0)}
+{'training/total_steps': 50000, 'training/updates': 25, 'training/walltime': np.float64(4.397), 'training/update_time': np.float64(0.108), 'training/pc_loss': 0.00014551820640917867, 'training/mean_reward': 0.9984501004219055, 'training/mean_advantage_abs': 0.003051853273063898}
+{'eval/num_episodes': 200, 'eval/mean_score': np.float64(0.9995), 'eval/std_score': np.float64(0.0071), 'eval/mean_episode_length': np.float64(1.0)}
+{'training/total_steps': 52000, 'training/updates': 26, 'training/walltime': np.float64(4.504), 'training/update_time': np.float64(0.106), 'training/pc_loss': 9.588043758412823e-05, 'training/mean_reward': 0.9990001320838928, 'training/mean_advantage_abs': 0.001979870954528451}
+{'eval/num_episodes': 200, 'eval/mean_score': np.float64(0.999), 'eval/std_score': np.float64(0.0099), 'eval/mean_episode_length': np.float64(1.0)}
+{'training/total_steps': 54000, 'training/updates': 27, 'training/walltime': np.float64(4.611), 'training/update_time': np.float64(0.107), 'training/pc_loss': 8.227879152400419e-05, 'training/mean_reward': 0.9991500973701477, 'training/mean_advantage_abs': 0.00168545451015234}
+{'eval/num_episodes': 200, 'eval/mean_score': np.float64(1.0), 'eval/std_score': np.float64(0.0), 'eval/mean_episode_length': np.float64(1.0)}
+{'training/total_steps': 56000, 'training/updates': 28, 'training/walltime': np.float64(4.721), 'training/update_time': np.float64(0.109), 'training/pc_loss': 4.410281326272525e-05, 'training/mean_reward': 0.9995501041412354, 'training/mean_advantage_abs': 0.0008958469261415303}
+{'eval/num_episodes': 200, 'eval/mean_score': np.float64(1.0), 'eval/std_score': np.float64(0.0), 'eval/mean_episode_length': np.float64(1.0)}
+{'training/total_steps': 58000, 'training/updates': 29, 'training/walltime': np.float64(4.833), 'training/update_time': np.float64(0.111), 'training/pc_loss': 1.483333562646294e-05, 'training/mean_reward': 0.9998500347137451, 'training/mean_advantage_abs': 0.0002995154354721308}
+{'eval/num_episodes': 200, 'eval/mean_score': np.float64(1.0), 'eval/std_score': np.float64(0.0), 'eval/mean_episode_length': np.float64(1.0)}
+{'training/total_steps': 60000, 'training/updates': 30, 'training/walltime': np.float64(4.943), 'training/update_time': np.float64(0.109), 'training/pc_loss': 3.943769843317568e-05, 'training/mean_reward': 0.9996000528335571, 'training/mean_advantage_abs': 0.000796747743152082}
+{'eval/num_episodes': 200, 'eval/mean_score': np.float64(1.0), 'eval/std_score': np.float64(0.0), 'eval/mean_episode_length': np.float64(1.0)}
+TRAINING END: training duration: 4.943867921829224

@@ -1,0 +1,31 @@
+bandit multi-seed summary (10 seeds: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+
+REINFORCE
+  final pi(opt): 0.018 ± 0.003 (std 0.009, med 0.015, 95% CI [0.011, 0.025])
+  avg pi(opt):   0.017 ± 0.000 (std 0.001, med 0.016, 95% CI [0.016, 0.017])
+  success (final >= 0.9): 0% (0/10)
+  steps to pi >= 0.9: n/a
+
+TRPO
+  final pi(opt): 0.993 ± 0.007 (std 0.022, med 1.000, 95% CI [0.977, 1.009])
+  avg pi(opt):   0.965 ± 0.001 (std 0.004, med 0.965, 95% CI [0.962, 0.968])
+  success (final >= 0.9): 100% (10/10)
+  steps to pi >= 0.9: mean 5800, median 6000 (10/10 seeds)
+
+Cleanba PPO
+  final pi(opt): 0.026 ± 0.003 (std 0.011, med 0.030, 95% CI [0.018, 0.034])
+  avg pi(opt):   0.021 ± 0.001 (std 0.003, med 0.020, 95% CI [0.019, 0.023])
+  success (final >= 0.9): 0% (0/10)
+  steps to pi >= 0.9: n/a
+
+PC-REINFORCE
+  final pi(opt): 0.968 ± 0.029 (std 0.091, med 1.000, 95% CI [0.901, 1.034])
+  avg pi(opt):   0.530 ± 0.044 (std 0.138, med 0.571, 95% CI [0.429, 0.631])
+  success (final >= 0.9): 90% (9/10)
+  steps to pi >= 0.9: mean 38222, median 38000 (9/10 seeds)
+
+PC actor-critic
+  final pi(opt): 0.969 ± 0.024 (std 0.075, med 0.992, 95% CI [0.914, 1.024])
+  avg pi(opt):   0.452 ± 0.048 (std 0.152, med 0.467, 95% CI [0.341, 0.563])
+  success (final >= 0.9): 90% (9/10)
+  steps to pi >= 0.9: mean 44000, median 44000 (9/10 seeds)

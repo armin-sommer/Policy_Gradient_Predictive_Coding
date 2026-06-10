@@ -1,6 +1,5 @@
 #!/bin/sh
-# Strip AI agent attribution trailers from commit messages so no
-# agents (Cursor, Claude, Copilot, ...) show up as GitHub contributors.
+#new
 msg="$1"
 [ -f "$msg" ] || exit 0
 tmp="${msg}.$$"

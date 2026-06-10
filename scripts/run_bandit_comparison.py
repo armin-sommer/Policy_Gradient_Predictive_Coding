@@ -145,6 +145,8 @@ def main():
                         help="Defaults to results/bandit_seed{seed}/ (tracked in git).")
     parser.add_argument("--algos", nargs="*", default=list(ALGO_MODULES),
                         choices=list(ALGO_MODULES))
+    parser.add_argument("--no-plot", action="store_true",
+                        help="Skip per-seed PNG (faster for batch runs).")
     args = parser.parse_args()
 
     out_dir = args.out_dir or str(REPO_ROOT / "results" / f"bandit_seed{args.seed}")
@@ -155,23 +157,26 @@ def main():
         print(f"\n=== running {algo} on the 2-armed bandit ===\n")
         results[algo] = run_algo(algo, args.seed, args.total_steps, log_dir=out_dir)
 
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
+    out_path = None
+    if not args.no_plot:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
 
-    fig, ax = plt.subplots(figsize=(7, 4.5))
-    for algo, points in results.items():
-        steps, pi = to_pi_optimal(points)
-        ax.plot(steps, pi, marker='o', markersize=3, label=LABELS[algo])
-    ax.axhline(1.0, color='gray', lw=0.8, ls='--')
-    ax.set_xlabel("env steps")
-    ax.set_ylabel(r"$\pi$(optimal arm)")
-    ax.set_ylim(-0.05, 1.05)
-    ax.set_title(f"2-armed bandit, adversarial init $\\pi_0 \\approx 0.018$ (seed {args.seed})")
-    ax.legend()
-    fig.tight_layout()
-    out_path = os.path.join(out_dir, f"bandit_npg_vs_pg_seed{args.seed}.png")
-    fig.savefig(out_path, dpi=150)
+        fig, ax = plt.subplots(figsize=(7, 4.5))
+        for algo, points in results.items():
+            steps, pi = to_pi_optimal(points)
+            ax.plot(steps, pi, marker='o', markersize=3, label=LABELS[algo])
+        ax.axhline(1.0, color='gray', lw=0.8, ls='--')
+        ax.set_xlabel("env steps")
+        ax.set_ylabel(r"$\pi$(optimal arm)")
+        ax.set_ylim(-0.05, 1.05)
+        ax.set_title(
+            f"2-armed bandit, adversarial init $\\pi_0 \\approx 0.018$ (seed {args.seed})")
+        ax.legend()
+        fig.tight_layout()
+        out_path = os.path.join(out_dir, f"bandit_npg_vs_pg_seed{args.seed}.png")
+        fig.savefig(out_path, dpi=150)
 
     csv_path = os.path.join(out_dir, "pi_optimal.csv")
     with open(csv_path, "w") as f:
@@ -181,7 +186,8 @@ def main():
             for s, p in zip(steps, pi):
                 f.write(f"{algo},{int(s)},{p:.6f}\n")
 
-    print(f"\nplot saved to {out_path}")
+    if out_path is not None:
+        print(f"\nplot saved to {out_path}")
     print(f"per-algo logs and {os.path.basename(csv_path)} in {out_dir}\n")
     summary_lines = []
     for algo, points in results.items():
