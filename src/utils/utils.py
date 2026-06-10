@@ -9,6 +9,9 @@ class EnvConfig:
     num_test_levels: int = 0
     distribution_mode: str = "easy"
     num_envs: int = 64
+    # bandit-only options (ignored by Procgen)
+    arm_means: tuple = (1.0, 0.9)
+    deterministic_rewards: bool = True
 
 
 @dataclass

@@ -18,6 +18,7 @@ dependencies = [
     "pyrallis",
     "pyyaml",
     "wandb",
+    "matplotlib",
 ]
 
 # Install with: pip install -e ".[gpu]"

@@ -18,7 +18,7 @@ import jax.numpy as jnp
 import numpy as np
 import optax
 
-from env import ProcgenVecEnv, ProcgenEvalEnv
+from env import make_vec_env
 from utils.utils import EnvConfig
 from networks.networks import ActivationFn
 from backprop_algorithms.common import (
@@ -28,6 +28,7 @@ from backprop_algorithms.common import (
     NetworkParams,
     Networks,
     TrainingState,
+    apply_policy_init_logit_bias,
     compute_gae,
     make_inference_fn,
     make_networks,
@@ -44,11 +45,13 @@ class Config:
     write_logs_to_file = False
     save_model = False
 
-    # environment (Procgen)
+    # environment (Procgen or bandit)
     env_name = 'coinrun'
     num_envs = 8
     num_train_levels = 200
     distribution_mode = 'easy'
+    arm_means = (1.0, 0.9)          # bandit only
+    deterministic_rewards = True    # bandit only
 
     # eval
     eval_env = True
@@ -82,6 +85,7 @@ class Config:
     policy_hidden_layer_sizes: Sequence[int] = ()
     value_hidden_layer_sizes: Sequence[int] = ()
     activation: ActivationFn = nn.relu
+    policy_init_logit_bias = None  # e.g. [0.0, 4.0] for the bandit plateau init
 
 
 def compute_policy_objective(params, data, hidden, advantages, network):
@@ -298,14 +302,16 @@ def main(_):
     key_policy, key_value = jax.random.split(global_key, 2)
     del global_key
 
-    # create Procgen env
+    # create env (Procgen or bandit)
     env_cfg = EnvConfig(
         env_name=Config.env_name,
         num_envs=Config.num_envs,
         num_train_levels=Config.num_train_levels,
         distribution_mode=Config.distribution_mode,
+        arm_means=tuple(Config.arm_means),
+        deterministic_rewards=Config.deterministic_rewards,
     )
-    envs = ProcgenVecEnv(env_cfg)
+    envs = make_vec_env(env_cfg)
     envs.seed(int(key_envs[0]))
     env_state = envs.reset()
 
@@ -444,7 +450,8 @@ def main(_):
         return (params, key), metrics
 
     def learn(data: Transition, training_state: TrainingState, key_sgd: jnp.ndarray):
-        value_params = deepcopy(training_state.params.value)
+        # jax arrays are immutable; no deepcopy needed (and tracers don't support it)
+        value_params = training_state.params.value
         key_policy, key_sgd = jax.random.split(key_sgd)
         (policy_params, _), policy_metrics = policy_sgd_step(
             (training_state.params, key_policy), (), data=data)
@@ -467,8 +474,12 @@ def main(_):
     learn = jax.pmap(learn, axis_name=_PMAP_AXIS_NAME)
 
     # initialize params & training state
+    init_policy_params = network.policy_network.init(key_policy)
+    if Config.policy_init_logit_bias is not None:
+        init_policy_params = apply_policy_init_logit_bias(
+            init_policy_params, Config.policy_init_logit_bias)
     init_params = NetworkParams(
-        policy=network.policy_network.init(key_policy),
+        policy=init_policy_params,
         value=network.value_network.init(key_value))
     training_state = TrainingState(
         optimizer_state=optimizer.init(init_params),
@@ -485,8 +496,10 @@ def main(_):
             num_envs=1,
             num_train_levels=Config.num_train_levels,
             distribution_mode=Config.distribution_mode,
+            arm_means=tuple(Config.arm_means),
+            deterministic_rewards=Config.deterministic_rewards,
         )
-        eval_env = ProcgenEvalEnv(eval_cfg)
+        eval_env = make_vec_env(eval_cfg, evaluate=True)
         eval_env.seed(int(eval_key[0]))
         eval_state = eval_env.reset()
 
@@ -498,7 +511,7 @@ def main(_):
     def _flatten_obs(obs):
         if Config.use_cnn:
             return np.asarray(obs, dtype=np.uint8)
-        return obs.reshape(obs.shape[0], -1).astype(jnp.float32) / 255.0
+        return envs.normalize_obs(obs.reshape(obs.shape[0], -1).astype(np.float32))
 
     # training loop
     for training_step in range(1, num_training_steps + 1):

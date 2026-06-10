@@ -1,0 +1,38 @@
+# 2-armed bandit: 1 state, 2 actions, 1-step episodes.
+# Arm 0 is optimal (mean 1.0), arm 1 pays 0.9 -- small gap.
+env:
+  env_name: "bandit"
+  num_envs: 8
+  arm_means: [1.0, 0.9]
+  deterministic_rewards: true
+
+train:
+  total_steps: 100_000
+  rollout_length: 128
+  batch_size: 1
+  num_minibatches: 4
+  update_epochs: 4
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_coef: 0.1
+  ent_coef: 0.0
+  vf_coef: 0.5
+  learning_rate: 2.5e-4
+  anneal_lr: false
+  max_grad_norm: 0.5
+
+agent:
+  algorithm: "cleanba_ppo"
+  network: "mlp"                    # tiny linear policy: logits = W*1 + b
+  # Adversarial init: policy starts at pi(arm 0) ~ 1.8% -- the softmax
+  # plateau where vanilla PG stalls but NPG/TRPO escapes immediately.
+  policy_init_logit_bias: [0.0, 4.0]
+
+logging:
+
+wandb:
+  mode: disabled
+  project: "bandit-pcpg"
+  group: null
+
+seed: 42
