@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SEEDS = list(range(1, 7)) + list(range(8, 22))
+DEFAULT_SEEDS = list(range(1, 11))
 
 
 def seed_complete(seed: int, results_root: Path) -> bool:

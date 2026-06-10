@@ -1,31 +1,31 @@
-bandit multi-seed summary (22 seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21])
+bandit multi-seed summary (10 seeds: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 
 REINFORCE
-  final pi(opt): 0.018 ± 0.002 (std 0.009, med 0.020, 95% CI [0.014, 0.022])
-  avg pi(opt):   0.016 ± 0.000 (std 0.001, med 0.016, 95% CI [0.016, 0.017])
-  success (final >= 0.9): 0% (0/22)
+  final pi(opt): 0.018 ± 0.003 (std 0.009, med 0.015, 95% CI [0.011, 0.025])
+  avg pi(opt):   0.017 ± 0.000 (std 0.001, med 0.016, 95% CI [0.016, 0.017])
+  success (final >= 0.9): 0% (0/10)
   steps to pi >= 0.9: n/a
 
 TRPO
-  final pi(opt): 0.996 ± 0.003 (std 0.015, med 1.000, 95% CI [0.989, 1.003])
-  avg pi(opt):   0.965 ± 0.001 (std 0.004, med 0.965, 95% CI [0.963, 0.967])
-  success (final >= 0.9): 100% (22/22)
-  steps to pi >= 0.9: mean 5909, median 6000 (22/22 seeds)
+  final pi(opt): 0.993 ± 0.007 (std 0.022, med 1.000, 95% CI [0.977, 1.009])
+  avg pi(opt):   0.965 ± 0.001 (std 0.004, med 0.965, 95% CI [0.962, 0.968])
+  success (final >= 0.9): 100% (10/10)
+  steps to pi >= 0.9: mean 5800, median 6000 (10/10 seeds)
 
 Cleanba PPO
-  final pi(opt): 0.025 ± 0.003 (std 0.012, med 0.020, 95% CI [0.020, 0.030])
-  avg pi(opt):   0.021 ± 0.000 (std 0.002, med 0.020, 95% CI [0.020, 0.022])
-  success (final >= 0.9): 0% (0/22)
+  final pi(opt): 0.026 ± 0.003 (std 0.011, med 0.030, 95% CI [0.018, 0.034])
+  avg pi(opt):   0.021 ± 0.001 (std 0.003, med 0.020, 95% CI [0.019, 0.023])
+  success (final >= 0.9): 0% (0/10)
   steps to pi >= 0.9: n/a
 
 PC-REINFORCE
-  final pi(opt): 0.985 ± 0.013 (std 0.062, med 1.000, 95% CI [0.958, 1.012])
-  avg pi(opt):   0.560 ± 0.021 (std 0.100, med 0.582, 95% CI [0.516, 0.605])
-  success (final >= 0.9): 95% (21/22)
-  steps to pi >= 0.9: mean 37619, median 38000 (21/22 seeds)
+  final pi(opt): 0.968 ± 0.029 (std 0.091, med 1.000, 95% CI [0.901, 1.034])
+  avg pi(opt):   0.530 ± 0.044 (std 0.138, med 0.571, 95% CI [0.429, 0.631])
+  success (final >= 0.9): 90% (9/10)
+  steps to pi >= 0.9: mean 38222, median 38000 (9/10 seeds)
 
 PC actor-critic
-  final pi(opt): 0.975 ± 0.014 (std 0.065, med 0.998, 95% CI [0.946, 1.004])
-  avg pi(opt):   0.477 ± 0.029 (std 0.136, med 0.493, 95% CI [0.417, 0.538])
-  success (final >= 0.9): 91% (20/22)
-  steps to pi >= 0.9: mean 42600, median 43000 (20/22 seeds)
+  final pi(opt): 0.969 ± 0.024 (std 0.075, med 0.992, 95% CI [0.914, 1.024])
+  avg pi(opt):   0.452 ± 0.048 (std 0.152, med 0.467, 95% CI [0.341, 0.563])
+  success (final >= 0.9): 90% (9/10)
+  steps to pi >= 0.9: mean 44000, median 44000 (9/10 seeds)
