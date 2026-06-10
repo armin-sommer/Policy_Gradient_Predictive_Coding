@@ -18,6 +18,8 @@ dependencies = [
     "pyrallis",
     "pyyaml",
     "wandb",
+    "matplotlib",
+    "jpc @ git+https://github.com/thebuckleylab/jpc",  # predictive coding (equinox/diffrax)
 ]
 
 # Install with: pip install -e ".[gpu]"

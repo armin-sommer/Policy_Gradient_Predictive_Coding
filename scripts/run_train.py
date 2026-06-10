@@ -27,6 +27,8 @@ KEY_MAP = {
     ("env", "num_envs"): "num_envs",
     ("env", "num_train_levels"): "num_train_levels",
     ("env", "distribution_mode"): "distribution_mode",
+    ("env", "arm_means"): "arm_means",
+    ("env", "deterministic_rewards"): "deterministic_rewards",
     ("train", "total_steps"): "total_timesteps",
     ("train", "rollout_length"): "unroll_length",
     ("train", "batch_size"): "batch_size",
@@ -38,14 +40,19 @@ KEY_MAP = {
     ("train", "ent_coef"): "entropy_cost",
     ("train", "vf_coef"): "vf_cost",
     ("train", "learning_rate"): "learning_rate",
+    ("train", "anneal_lr"): "anneal_lr",
     ("train", "max_grad_norm"): "max_grad_norm",
+    ("agent", "policy_init_logit_bias"): "policy_init_logit_bias",
     ("seed",): "seed",
 }
 
 ALGO_MODULES = {
-    "ppo": "algorithms.ppo",
-    "trpo": "algorithms.trpo",
-    "reinforce": "algorithms.reinforce",
+    "ppo": "backprop_algorithms.ppo",
+    "trpo": "backprop_algorithms.trpo",
+    "reinforce": "backprop_algorithms.reinforce",
+    "cleanba_ppo": "backprop_algorithms.cleanba_ppo",
+    "pc_reinforce": "pc_algorithms.pc_reinforce",
+    "pc_actor_critic": "pc_algorithms.pc_actor_critic",
 }
 
 
