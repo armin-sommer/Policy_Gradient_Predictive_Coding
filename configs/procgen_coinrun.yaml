@@ -1,0 +1,35 @@
+# Procgen backprop MVP config (PPO + NatureCNN on coinrun).
+# Mirrors default.yaml but with a smaller smoke-test budget. Run on a Linux
+# GPU box (Procgen has no macOS wheel). The "cnn" substring in agent.network
+# is what turns on the CNN policy (run_train.py: use_cnn = "cnn" in network).
+env:
+  env_name: "coinrun"
+  num_train_levels: 200
+  distribution_mode: "easy"
+  num_envs: 64                      # batch_size * num_minibatches must divide num_envs
+
+train:
+  total_steps: 2_000_000            # smoke budget; raise to 25_000_000 for a real run
+  rollout_length: 256
+  batch_size: 8
+  num_minibatches: 8
+  update_epochs: 3
+  gamma: 0.999
+  gae_lambda: 0.95
+  clip_coef: 0.2
+  ent_coef: 0.01
+  vf_coef: 0.5
+  learning_rate: 5.0e-4
+  max_grad_norm: 0.5
+  anneal_lr: true
+
+agent:
+  algorithm: "ppo"
+  network: "nature_cnn"             # only the "cnn" substring matters; arch is NatureCNN
+
+wandb:
+  mode: disabled
+  project: "procgen-pcpg"
+  group: null
+
+seed: 42
