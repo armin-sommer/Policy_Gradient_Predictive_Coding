@@ -220,7 +220,7 @@ def main(_):
         policy_hidden_layer_sizes=Config.policy_hidden_layer_sizes,
         value_hidden_layer_sizes=Config.value_hidden_layer_sizes,
         activation=Config.activation,
-        discrete_policy=True,
+        discrete_policy=not getattr(envs.action_space, "continuous", False),
         use_cnn=Config.use_cnn,
     )
     make_policy = make_inference_fn(ppo_network)

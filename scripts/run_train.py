@@ -43,6 +43,8 @@ KEY_MAP = {
     ("train", "anneal_lr"): "anneal_lr",
     ("train", "max_grad_norm"): "max_grad_norm",
     ("agent", "policy_init_logit_bias"): "policy_init_logit_bias",
+    ("agent", "policy_hidden_layer_sizes"): "policy_hidden_layer_sizes",
+    ("agent", "value_hidden_layer_sizes"): "value_hidden_layer_sizes",
     ("seed",): "seed",
 }
 

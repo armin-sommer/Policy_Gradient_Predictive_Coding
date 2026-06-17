@@ -1,11 +1,14 @@
-"""Verify the Brax MuJoCo env wrapper (MujocoVecEnv / MujocoEvalEnv).
+"""Verify MuJoCo backprop support (continuous control).
 
-  env  (needs brax)  : reset/step shapes, continuous actions, done, eval episodes
+  dist (pure JAX)  : NormalTanhDistribution log_prob/entropy/kl/sample shapes
+  net  (pure JAX)  : continuous MLP policy/value forward + sampled action range
+  env  (needs brax): reset/step shapes, continuous actions, done, eval episodes
 
-Runs on a machine with brax + a JAX backend (the A100 box). Auto-skips if brax
-is not installed. Usage:
+dist + net run anywhere; env needs brax + a JAX backend (the A100 box) and
+auto-skips otherwise. Usage:
     python scripts/verify_mujoco.py
-    python scripts/verify_mujoco.py --env hopper
+    python scripts/verify_mujoco.py --check dist net
+    python scripts/verify_mujoco.py --check env --env hopper
 """
 
 import argparse
@@ -18,6 +21,64 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = REPO_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
+
+import jax
+import jax.numpy as jnp
+
+
+def check_dist() -> bool:
+    """NormalTanhDistribution must give correct shapes for continuous actions."""
+    from networks.distributions import NormalTanhDistribution
+
+    act_dim, n = 6, 8
+    dist = NormalTanhDistribution(event_size=act_dim)
+    key = jax.random.PRNGKey(0)
+    params = jax.random.normal(key, (n, dist.param_size))  # 2*act_dim
+    actions = dist.sample(params, key)
+    raw = dist.sample_no_postprocessing(params, key)
+    logp = dist.log_prob(params, raw)
+    ent = dist.entropy(params, key)
+    kl = dist.kl_divergence(params, params)
+
+    param_ok = dist.param_size == 2 * act_dim
+    act_ok = actions.shape == (n, act_dim) and bool((np.abs(actions) <= 1.0).all())
+    logp_ok = logp.shape == (n,)
+    kl_ok = bool(jnp.allclose(kl, 0.0, atol=1e-5))  # KL(p||p) == 0
+    print(f"  [dist] param_size  : {'ok' if param_ok else 'BAD'}  {dist.param_size} (want {2*act_dim})")
+    print(f"  [dist] sampled acts: {'ok' if act_ok else 'BAD'}  {actions.shape} in [-1,1]")
+    print(f"  [dist] log_prob    : {'ok' if logp_ok else 'BAD'}  {logp.shape} (want {(n,)})")
+    print(f"  [dist] KL(p||p)=0  : {'ok' if kl_ok else 'BAD'}")
+    return param_ok and act_ok and logp_ok and kl_ok
+
+
+def check_net() -> bool:
+    """Continuous MLP policy/value (discrete_policy=False) shapes + action range."""
+    from backprop_algorithms.common import make_networks, make_inference_fn
+
+    obs_dim, act_dim, n = 17, 6, 8
+    net = make_networks(observation_size=obs_dim, action_size=act_dim,
+                        policy_hidden_layer_sizes=(128, 128, 128, 128),
+                        value_hidden_layer_sizes=(128, 128, 128, 128),
+                        discrete_policy=False, use_cnn=False)
+    key = jax.random.PRNGKey(0)
+    kp, kv, ks = jax.random.split(key, 3)
+    pp = net.policy_network.init(kp)
+    vp = net.value_network.init(kv)
+    obs = jax.random.normal(ks, (n, obs_dim))
+
+    params = net.policy_network.apply(pp, obs)
+    values = net.value_network.apply(vp, obs)
+    params_ok = params.shape == (n, 2 * act_dim)  # mean + std
+    values_ok = values.shape == (n,)
+    print(f"  [net] policy params: {'ok' if params_ok else 'BAD'}  {params.shape} (want {(n, 2*act_dim)})")
+    print(f"  [net] value shape  : {'ok' if values_ok else 'BAD'}  {values.shape} (want {(n,)})")
+
+    policy = make_inference_fn(net)(pp)
+    actions, _ = policy(obs, ks)
+    actions = np.asarray(actions)
+    range_ok = bool((np.abs(actions) <= 1.0).all()) and actions.shape == (n, act_dim)
+    print(f"  [net] sampled acts : {'ok' if range_ok else 'BAD'}  {actions.shape} in [-1,1]")
+    return params_ok and values_ok and range_ok
 
 
 def check_env(env_name: str, num_envs: int = 8, episode_length: int = 50) -> bool:
@@ -75,21 +136,28 @@ def check_env(env_name: str, num_envs: int = 8, episode_length: int = 50) -> boo
     return obs_ok and cont_ok and done_seen and reward_finite and done_binary and eval_ok
 
 
+CHECKS = {"dist": check_dist, "net": check_net, "env": None}  # env handled below
+
+
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--check", nargs="*", default=list(CHECKS), choices=list(CHECKS))
     parser.add_argument("--env", type=str, default="halfcheetah")
     args = parser.parse_args()
 
-    print(f"\n=== env ({args.env}) ===")
-    try:
-        ok = check_env(args.env)
-    except Exception as e:  # surface the failure
-        print(f"  [env] ERROR: {type(e).__name__}: {e}")
-        ok = False
+    results = {}
+    for name in args.check:
+        print(f"\n=== {name} ===")
+        try:
+            results[name] = check_env(args.env) if name == "env" else CHECKS[name]()
+        except Exception as e:  # surface the failure, keep going
+            print(f"  [{name}] ERROR: {type(e).__name__}: {e}")
+            results[name] = False
 
     print("\n=== summary ===")
-    print(f"  env : {'PASS' if ok else 'FAIL'}")
-    sys.exit(0 if ok else 1)
+    for name, ok in results.items():
+        print(f"  {name:4} : {'PASS' if ok else 'FAIL'}")
+    sys.exit(0 if all(results.values()) else 1)
 
 
 if __name__ == "__main__":

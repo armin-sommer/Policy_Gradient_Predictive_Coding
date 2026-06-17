@@ -1,6 +1,0 @@
-#!/bin/sh
-#new
-msg="$1"
-[ -f "$msg" ] || exit 0
-tmp="${msg}.$$"
-grep -viE '^(co-authored-by:.*(cursor|claude|copilot|anthropic|openai|codex|composer)|made.with:?[[:space:]]*cursor)' "$msg" > "$tmp" && mv "$tmp" "$msg"
