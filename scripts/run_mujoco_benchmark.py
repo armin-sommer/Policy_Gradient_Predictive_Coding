@@ -21,24 +21,28 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CONFIG = REPO_ROOT / "configs" / "mujoco_halfcheetah.yaml"
 ALGOS = ["ppo", "trpo", "reinforce"]
-FINAL_RE = re.compile(r"'final_eval/mean_score':\s*(?:np\.float64\()?(-?[\d.eE+]+)")
+EVAL_RE = re.compile(r"'eval/mean_score':\s*(?:np\.float64\()?(-?[\d.eE+]+)")
 
 
-def final_score(text: str):
-    matches = FINAL_RE.findall(text)
-    return float(matches[-1]) if matches else None
+def best_score(text: str):
+    matches = EVAL_RE.findall(text)
+    return max(float(m) for m in matches) if matches else None
 
 
-def run_one(algo, seed, env_name, total_steps, out_dir):
+def run_one(algo, seed, env_name, total_steps, out_dir, wandb_project=None):
     log_path = out_dir / f"{env_name}_{algo}_seed{seed}.log"
-    if log_path.exists() and final_score(log_path.read_text()) is not None:
+    if log_path.exists() and best_score(log_path.read_text()) is not None:
         print(f"skip {algo} seed{seed} (log exists)")
-        return final_score(log_path.read_text())
+        return best_score(log_path.read_text())
 
     overrides = [f"agent.algorithm={algo}", f"seed={seed}",
                  f"env.env_name={env_name}", f"train.total_steps={total_steps}"]
     if algo == "reinforce":
         overrides.append("env.num_envs=1")  # required by REINFORCE's rollout
+        overrides.append("train.num_minibatches=1")  # single-env batch can't split into 32
+    if wandb_project:
+        overrides += [f"wandb.mode=online", f"wandb.project={wandb_project}",
+                      f"wandb.group={env_name}_{algo}"]  # seeds overlay per (task, algo)
     cmd = [sys.executable, str(REPO_ROOT / "scripts" / "run_train.py"),
            "--config", str(CONFIG), "--no-save", "--overrides", *overrides]
 
@@ -51,8 +55,8 @@ def run_one(algo, seed, env_name, total_steps, out_dir):
     if proc.returncode != 0:
         print(f"  FAILED (rc={proc.returncode}, {dt:.0f}s) -> see {log_path}")
         return None
-    score = final_score(log_path.read_text())
-    print(f"  done ({dt:.0f}s)  final return = {score}")
+    score = best_score(log_path.read_text())
+    print(f"  done ({dt:.0f}s)  best return = {score}")
     return score
 
 
@@ -61,8 +65,10 @@ def main():
     parser.add_argument("--algos", nargs="*", default=ALGOS, choices=ALGOS)
     parser.add_argument("--seeds", type=int, nargs="*", default=[1, 2, 3])
     parser.add_argument("--env", type=str, default="halfcheetah")
-    parser.add_argument("--total-steps", type=int, default=2_000_000)
+    parser.add_argument("--total-steps", type=int, default=120_000)
     parser.add_argument("--out-dir", type=str, default=str(REPO_ROOT / "results" / "mujoco"))
+    parser.add_argument("--wandb-project", type=str, default=None,
+                        help="If set, log to this W&B project (grouped by env_algo).")
     args = parser.parse_args()
 
     out_dir = Path(args.out_dir)
@@ -72,13 +78,13 @@ def main():
     scores = {algo: [] for algo in args.algos}
     for algo in args.algos:
         for seed in args.seeds:
-            s = run_one(algo, seed, args.env, args.total_steps, out_dir)
+            s = run_one(algo, seed, args.env, args.total_steps, out_dir, args.wandb_project)
             if s is not None:
                 scores[algo].append(s)
 
     csv = out_dir / f"{args.env}_summary.csv"
-    lines = ["algo,n,final_mean,final_std,final_scores"]
-    print(f"\n=== {args.env} final return (mean +/- std over seeds, "
+    lines = ["algo,n,best_mean,best_std,best_scores"]
+    print(f"\n=== {args.env} best return (mean +/- std over seeds, "
           f"{args.total_steps} steps) ===")
     for algo in args.algos:
         vals = scores[algo]
