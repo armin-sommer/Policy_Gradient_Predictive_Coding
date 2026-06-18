@@ -47,6 +47,11 @@ class MujocoVecEnv:
         self.num_envs = cfg.num_envs
         self._key = jax.random.PRNGKey(0)
         self._state = None
+        # running obs mean/std (Welford) — TRPO's natural gradient needs normalized
+        # inputs or its Fisher is ill-conditioned and the policy never moves.
+        self._obs_mean = np.zeros(self.observation_size, dtype=np.float64)
+        self._obs_var = np.ones(self.observation_size, dtype=np.float64)
+        self._obs_count = 1e-4
 
     def seed(self, seed: int):
         self._key = jax.random.PRNGKey(int(seed))
@@ -73,7 +78,19 @@ class MujocoVecEnv:
         )
 
     def normalize_obs(self, obs):
-        return obs
+        """Normalize with a running mean/std (parallel Welford update)."""
+        obs = np.asarray(obs, dtype=np.float32)
+        batch_mean = obs.mean(axis=0)
+        batch_var = obs.var(axis=0)
+        n = obs.shape[0]
+        delta = batch_mean - self._obs_mean
+        tot = self._obs_count + n
+        self._obs_mean += delta * n / tot
+        m2 = self._obs_var * self._obs_count + batch_var * n + delta ** 2 * self._obs_count * n / tot
+        self._obs_var = m2 / tot
+        self._obs_count = tot
+        return np.clip((obs - self._obs_mean) / np.sqrt(self._obs_var + 1e-8),
+                       -10.0, 10.0).astype(np.float32)
 
     def close(self):
         pass
