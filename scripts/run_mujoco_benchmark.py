@@ -31,8 +31,8 @@ def best_score(text: str):
 
 def run_one(algo, seed, env_name, total_steps, out_dir, wandb_project=None):
     log_path = out_dir / f"{env_name}_{algo}_seed{seed}.log"
-    if log_path.exists() and best_score(log_path.read_text()) is not None:
-        print(f"skip {algo} seed{seed} (log exists)")
+    if log_path.exists() and "TRAINING END" in log_path.read_text():
+        print(f"skip {algo} seed{seed} (complete)")
         return best_score(log_path.read_text())
 
     config = REPO_ROOT / "configs" / f"mujoco_{env_name}.yaml"
