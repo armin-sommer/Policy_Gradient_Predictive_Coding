@@ -35,16 +35,25 @@ def run_one(algo, seed, env_name, total_steps, out_dir, wandb_project=None):
         print(f"skip {algo} seed{seed} (log exists)")
         return best_score(log_path.read_text())
 
-    overrides = [f"agent.algorithm={algo}", f"seed={seed}",
-                 f"env.env_name={env_name}", f"train.total_steps={total_steps}"]
+    config = REPO_ROOT / "configs" / f"mujoco_{env_name}.yaml"
+    if not config.exists():
+        config = CONFIG  # fall back to the HalfCheetah config
+    overrides = [f"agent.algorithm={algo}", f"seed={seed}", f"env.env_name={env_name}"]
+    if total_steps is not None:
+        overrides.append(f"train.total_steps={total_steps}")  # else use the config's budget
     if algo == "reinforce":
         overrides.append("env.num_envs=1")  # required by REINFORCE's rollout
         overrides.append("train.num_minibatches=1")  # single-env batch can't split into 32
+    if algo == "trpo":
+        # natural gradient needs a full-batch Fisher (one update/rollout, like sb3);
+        # lighter eval so the ~1M-step run isn't dominated by 150s evals.
+        overrides += ["train.num_minibatches=1", "train.batch_size=256",
+                      "train.eval_every=20"]
     if wandb_project:
         overrides += [f"wandb.mode=online", f"wandb.project={wandb_project}",
                       f"wandb.group={env_name}_{algo}"]  # seeds overlay per (task, algo)
     cmd = [sys.executable, str(REPO_ROOT / "scripts" / "run_train.py"),
-           "--config", str(CONFIG), "--no-save", "--overrides", *overrides]
+           "--config", str(config), "--no-save", "--overrides", *overrides]
 
     print(f"\n#### {algo} {env_name} seed {seed} ####  (tail -f {log_path})")
     t0 = time.time()
@@ -65,7 +74,8 @@ def main():
     parser.add_argument("--algos", nargs="*", default=ALGOS, choices=ALGOS)
     parser.add_argument("--seeds", type=int, nargs="*", default=[1, 2, 3])
     parser.add_argument("--env", type=str, default="halfcheetah")
-    parser.add_argument("--total-steps", type=int, default=120_000)
+    parser.add_argument("--total-steps", type=int, default=None,
+                        help="Override the per-task config budget (default: use config).")
     parser.add_argument("--out-dir", type=str, default=str(REPO_ROOT / "results" / "mujoco"))
     parser.add_argument("--wandb-project", type=str, default=None,
                         help="If set, log to this W&B project (grouped by env_algo).")
@@ -84,8 +94,8 @@ def main():
 
     csv = out_dir / f"{args.env}_summary.csv"
     lines = ["algo,n,best_mean,best_std,best_scores"]
-    print(f"\n=== {args.env} best return (mean +/- std over seeds, "
-          f"{args.total_steps} steps) ===")
+    budget = f"{args.total_steps} steps" if args.total_steps else "per-config budget"
+    print(f"\n=== {args.env} best return (mean +/- std over seeds, {budget}) ===")
     for algo in args.algos:
         vals = scores[algo]
         if vals:

@@ -45,6 +45,7 @@ KEY_MAP = {
     ("agent", "policy_init_logit_bias"): "policy_init_logit_bias",
     ("agent", "policy_hidden_layer_sizes"): "policy_hidden_layer_sizes",
     ("agent", "value_hidden_layer_sizes"): "value_hidden_layer_sizes",
+    ("train", "eval_every"): "eval_every",
     ("seed",): "seed",
 }
 
