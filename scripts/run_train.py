@@ -117,12 +117,14 @@ def _setup_wandb(cfg, run_name):
     # the algorithm files. Each algo logs metric dicts via logging.info(...).
     import logging
     class _WandbHandler(logging.Handler):
+        _last_step = 0  # eval dicts have no total_steps; reuse the latest train step
         def emit(self, record):
             msg = record.msg
             if isinstance(msg, dict):
-                step = msg.get("training/total_steps")
+                if "training/total_steps" in msg:
+                    _WandbHandler._last_step = int(msg["training/total_steps"])
                 wandb.log({k: v for k, v in msg.items() if k != "training/total_steps"},
-                          step=step)
+                          step=_WandbHandler._last_step)
     logging.getLogger().addHandler(_WandbHandler())
     # The algo's logging.basicConfig is a no-op once a handler exists, so without
     # this the run trains but writes nothing to stdout / the per-run log file.
