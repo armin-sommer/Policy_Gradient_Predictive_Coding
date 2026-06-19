@@ -216,3 +216,66 @@ def make_value_network(
     dummy_obs = jnp.zeros((1, obs_size))
     return FeedForwardNetwork(
         init=lambda key: value_module.init(key, dummy_obs), apply=apply)
+
+
+# --- SOTA (CleanRL / Engstrom) continuous-control networks ------------------
+# Orthogonal init (sqrt(2) hidden, 0.01 actor output, 1.0 critic output), tanh,
+# and a STATE-INDEPENDENT log_std parameter (init 0 -> std=1 with exp std). The
+# policy returns concat([mean, log_std]) so param_size stays 2*action_size and
+# NormalTanhDistribution is unchanged.
+_ORTHO = lambda gain: jax.nn.initializers.orthogonal(gain)
+_ZERO = jax.nn.initializers.constant(0.0)
+
+
+class SOTAPolicyMLP(linen.Module):
+    hidden_layer_sizes: Sequence[int]
+    action_size: int
+    activation: ActivationFn = linen.tanh
+
+    @linen.compact
+    def __call__(self, x):
+        for i, h in enumerate(self.hidden_layer_sizes):
+            x = linen.Dense(h, name=f'hidden_{i}',
+                            kernel_init=_ORTHO(jnp.sqrt(2)), bias_init=_ZERO)(x)
+            x = self.activation(x)
+        mean = linen.Dense(self.action_size, name='mean',
+                           kernel_init=_ORTHO(0.01), bias_init=_ZERO)(x)
+        log_std = self.param('log_std', jax.nn.initializers.zeros, (self.action_size,))
+        return jnp.concatenate([mean, jnp.broadcast_to(log_std, mean.shape)], axis=-1)
+
+
+class SOTAValueMLP(linen.Module):
+    hidden_layer_sizes: Sequence[int]
+    activation: ActivationFn = linen.tanh
+
+    @linen.compact
+    def __call__(self, x):
+        for i, h in enumerate(self.hidden_layer_sizes):
+            x = linen.Dense(h, name=f'hidden_{i}',
+                            kernel_init=_ORTHO(jnp.sqrt(2)), bias_init=_ZERO)(x)
+            x = self.activation(x)
+        v = linen.Dense(1, name='value', kernel_init=_ORTHO(1.0), bias_init=_ZERO)(x)
+        return jnp.squeeze(v, axis=-1)
+
+
+def make_sota_policy_network(
+        action_size: int, obs_size: int,
+        hidden_layer_sizes: Sequence[int] = (64, 64),
+        activation: ActivationFn = linen.tanh) -> FeedForwardNetwork:
+    module = SOTAPolicyMLP(hidden_layer_sizes=list(hidden_layer_sizes),
+                           action_size=action_size, activation=activation)
+    dummy_obs = jnp.zeros((1, obs_size))
+    return FeedForwardNetwork(
+        init=lambda key: module.init(key, dummy_obs),
+        apply=lambda params, obs: module.apply(params, obs))
+
+
+def make_sota_value_network(
+        obs_size: int, hidden_layer_sizes: Sequence[int] = (64, 64),
+        activation: ActivationFn = linen.tanh) -> FeedForwardNetwork:
+    module = SOTAValueMLP(hidden_layer_sizes=list(hidden_layer_sizes),
+                          activation=activation)
+    dummy_obs = jnp.zeros((1, obs_size))
+    return FeedForwardNetwork(
+        init=lambda key: module.init(key, dummy_obs),
+        apply=lambda params, obs: module.apply(params, obs))

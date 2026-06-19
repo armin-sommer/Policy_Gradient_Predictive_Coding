@@ -145,12 +145,14 @@ class TanhBijector:
 class NormalTanhDistribution(ParametricDistribution):
     """Normal distribution followed by tanh."""
 
-    def __init__(self, event_size, min_std=0.001):
+    def __init__(self, event_size, min_std=0.001, exp_std=False):
         """Initialize the distribution.
 
         Args:
         event_size: the size of events (i.e. actions).
         min_std: minimum std for the gaussian.
+        exp_std: if True use scale = exp(log_std) (SOTA: log_std=0 -> std=1);
+            otherwise softplus(scale) + min_std (default).
         """
         # We apply tanh to gaussian actions to bound them.
         # Normally we would use TransformedDistribution to automatically
@@ -165,12 +167,16 @@ class NormalTanhDistribution(ParametricDistribution):
             event_ndims=1,
             reparametrizable=True)
         self._min_std = min_std
+        self._exp_std = exp_std
 
     def create_dist(self, parameters):
         loc, scale = jnp.split(parameters, 2, axis=-1)
-        scale = jax.nn.softplus(scale) + self._min_std
+        if self._exp_std:
+            scale = jnp.exp(scale)
+        else:
+            scale = jax.nn.softplus(scale) + self._min_std
         return NormalDistribution(loc=loc, scale=scale)
-    
+
 
 class IdentityPostprocessor:
     """Tanh Bijector."""

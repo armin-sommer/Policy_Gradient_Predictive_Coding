@@ -75,6 +75,9 @@ class Config:
     max_grad_norm = 0.5
     target_kl = None
     reward_scaling = 1.
+    adam_eps = 1e-8          # SOTA: 1e-5
+    sota_init = False        # SOTA: orthogonal init + tanh + state-indep log_std
+    normalize_rewards = False  # SOTA: running return-std reward scaling (train only)
 
     # policy params
     use_cnn = True  # NatureCNN encoder for Procgen pixel obs
@@ -222,6 +225,7 @@ def main(_):
         activation=Config.activation,
         discrete_policy=not getattr(envs.action_space, "continuous", False),
         use_cnn=Config.use_cnn,
+        sota_init=Config.sota_init,
     )
     make_policy = make_inference_fn(ppo_network)
 
@@ -235,7 +239,7 @@ def main(_):
         learning_rate = Config.learning_rate
     optimizer = optax.chain(
         optax.clip_by_global_norm(Config.max_grad_norm),
-        optax.adam(learning_rate),
+        optax.adam(learning_rate, eps=Config.adam_eps),
     )
 
     loss_fn = partial(
@@ -338,10 +342,13 @@ def main(_):
     training_walltime = 0
     scores = []
 
-    def _flatten_obs(obs):
+    def _flatten_obs(obs, update=True):
         if Config.use_cnn:
             return np.asarray(obs, dtype=np.uint8)
-        return envs.normalize_obs(obs.reshape(obs.shape[0], -1).astype(np.float32))
+        # update=True advances the running obs stats; normalize each raw obs once
+        # and reuse it so the stored obs == the policy's input (on-policy ratio 1).
+        return envs.normalize_obs(
+            obs.reshape(obs.shape[0], -1).astype(np.float32), update=update)
 
     # training loop
     for training_step in range(1, num_training_steps + 1):
@@ -358,17 +365,19 @@ def main(_):
             transitions = []
             for unroll_step in range(Config.unroll_length):
                 current_key, key_generate_unroll = jax.random.split(key_generate_unroll)
-                obs = _flatten_obs(env_state.obs)
+                obs = _flatten_obs(env_state.obs)  # updates stats once for this step
                 actions, policy_extras = policy(obs, current_key)
                 actions = np.asarray(actions)
                 nstate = envs.step(actions)
+                reward = (envs.normalize_reward(nstate.reward, nstate.done, Config.gamma)
+                          if Config.normalize_rewards else nstate.reward)
                 state_extras = {'truncation': jnp.array([info['truncation'] for info in nstate.info])}
                 transition = Transition(
-                    observation=_flatten_obs(env_state.obs),
+                    observation=obs,  # reuse: stored obs == the obs the policy acted on
                     action=actions,
-                    reward=nstate.reward,
+                    reward=reward,
                     discount=1 - nstate.done,
-                    next_observation=_flatten_obs(nstate.obs),
+                    next_observation=_flatten_obs(nstate.obs, update=False),
                     extras={
                         'policy_extras': policy_extras,
                         'state_extras': state_extras
@@ -422,7 +431,7 @@ def main(_):
             while True:
                 eval_steps += 1
                 current_key, eval_key = jax.random.split(eval_key)
-                obs = _flatten_obs(eval_state.obs)
+                obs = _flatten_obs(eval_state.obs, update=False)  # eval must not move train stats
                 actions, policy_extras = policy(obs, current_key)
                 actions = np.asarray(actions)
                 eval_state = eval_env.step(actions)
@@ -453,7 +462,7 @@ def main(_):
         while True:
             eval_steps += 1
             current_key, eval_key = jax.random.split(eval_key)
-            obs = _flatten_obs(eval_state.obs)
+            obs = _flatten_obs(eval_state.obs, update=False)  # eval must not move train stats
             actions, policy_extras = policy(obs, current_key)
             actions = np.asarray(actions)
             eval_state = eval_env.step(actions)

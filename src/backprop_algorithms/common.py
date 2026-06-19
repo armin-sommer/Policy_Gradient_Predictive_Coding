@@ -16,6 +16,8 @@ from networks.networks import (
     make_value_network,
     make_cnn_policy_network,
     make_cnn_value_network,
+    make_sota_policy_network,
+    make_sota_value_network,
 )
 from networks.distributions import (
     NormalTanhDistribution,
@@ -125,12 +127,21 @@ def make_networks(
         activation: ActivationFn = nn.swish,
         discrete_policy: bool = True,
         use_cnn: bool = False,
+        sota_init: bool = False,
     ) -> Networks:
-    """Build the shared policy/value networks and action distribution."""
+    """Build the shared policy/value networks and action distribution.
+
+    sota_init=True selects the CleanRL/Engstrom continuous-control stack
+    (orthogonal init, tanh, state-independent log_std with exp std). It only
+    applies to the MLP continuous path (Gaussian, non-CNN); the discrete and
+    CNN paths ignore it.
+    """
+    sota = sota_init and not discrete_policy and not use_cnn
     if discrete_policy:
         parametric_action_distribution = DiscreteDistribution(param_size=action_size)
     else:
-        parametric_action_distribution = NormalTanhDistribution(event_size=action_size)
+        parametric_action_distribution = NormalTanhDistribution(
+            event_size=action_size, exp_std=sota)
     if use_cnn:
         policy_network = make_cnn_policy_network(
             parametric_action_distribution.param_size,
@@ -141,6 +152,14 @@ def make_networks(
             observation_size,
             hidden_layer_sizes=value_hidden_layer_sizes,
             activation=activation)
+    elif sota:
+        # tanh is baked in (part of the canonical spec)
+        policy_network = make_sota_policy_network(
+            action_size, observation_size,
+            hidden_layer_sizes=policy_hidden_layer_sizes, activation=nn.tanh)
+        value_network = make_sota_value_network(
+            observation_size,
+            hidden_layer_sizes=value_hidden_layer_sizes, activation=nn.tanh)
     else:
         policy_network = make_policy_network(
             parametric_action_distribution.param_size,

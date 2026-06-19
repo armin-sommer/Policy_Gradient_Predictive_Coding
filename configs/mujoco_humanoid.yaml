@@ -20,12 +20,15 @@ train:
   learning_rate: 3.0e-4
   anneal_lr: false
   max_grad_norm: 0.5
+  adam_eps: 1.0e-5
+  normalize_rewards: true
 
 agent:
   algorithm: "ppo"
   network: "mlp"                   # must NOT contain "cnn" -> MLP policy for vector obs
-  policy_hidden_layer_sizes: [128, 128, 128, 128]
-  value_hidden_layer_sizes: [128, 128, 128, 128]
+  policy_hidden_layer_sizes: [64, 64]
+  value_hidden_layer_sizes: [64, 64]
+  sota_init: true       # CleanRL/Engstrom: orthogonal init, tanh, state-indep log_std
 
 wandb:
   mode: disabled

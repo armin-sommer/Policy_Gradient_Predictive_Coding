@@ -52,6 +52,10 @@ class MujocoVecEnv:
         self._obs_mean = np.zeros(self.observation_size, dtype=np.float64)
         self._obs_var = np.ones(self.observation_size, dtype=np.float64)
         self._obs_count = 1e-4
+        # running discounted return + its std, for SOTA reward normalization
+        self._ret = np.zeros(self.num_envs, dtype=np.float64)
+        self._ret_var = 1.0
+        self._ret_count = 1e-4
 
     def seed(self, seed: int):
         self._key = jax.random.PRNGKey(int(seed))
@@ -99,6 +103,28 @@ class MujocoVecEnv:
             self._obs_var = m2 / tot
             self._obs_count = tot
         return np.clip((obs - self._obs_mean) / np.sqrt(self._obs_var + 1e-8),
+                       -10.0, 10.0).astype(np.float32)
+
+    def normalize_reward(self, reward, done, gamma):
+        """SOTA reward scaling: divide reward by the running std of the
+        discounted return (no mean subtraction), clip +/-10. Stateful and
+        TRAINING ONLY -- never call on the eval env, whose returns must stay raw.
+        """
+        reward = np.asarray(reward, dtype=np.float64)
+        done = np.asarray(done).astype(bool)
+        self._ret = self._ret * gamma + reward
+        n = self._ret.shape[0]
+        batch_mean = self._ret.mean()
+        batch_var = self._ret.var()
+        tot = self._ret_count + n
+        # running variance of the returns (mean tracked only to update var)
+        delta = batch_mean - getattr(self, "_ret_mean", 0.0)
+        self._ret_mean = getattr(self, "_ret_mean", 0.0) + delta * n / tot
+        m2 = self._ret_var * self._ret_count + batch_var * n + delta ** 2 * self._ret_count * n / tot
+        self._ret_var = m2 / tot
+        self._ret_count = tot
+        self._ret[done] = 0.0  # reset the discounted return at episode boundaries
+        return np.clip(reward / np.sqrt(self._ret_var + 1e-8),
                        -10.0, 10.0).astype(np.float32)
 
     def close(self):

@@ -78,6 +78,9 @@ class Config:
     vf_cost = 1.
     max_grad_norm = 0.5
     reward_scaling = 1.
+    adam_eps = 1e-8          # SOTA: 1e-5
+    sota_init = False        # SOTA: orthogonal init + tanh + state-indep log_std
+    normalize_rewards = False  # SOTA: running return-std reward scaling (train only)
 
     # policy params
     use_cnn = True
@@ -327,6 +330,7 @@ def main(_):
         activation=Config.activation,
         discrete_policy=not getattr(envs.action_space, "continuous", False),
         use_cnn=Config.use_cnn,
+        sota_init=Config.sota_init,
     )
     make_policy = make_inference_fn(network)
 
@@ -340,7 +344,7 @@ def main(_):
         learning_rate = Config.learning_rate
     optimizer = optax.chain(
         optax.clip_by_global_norm(Config.max_grad_norm),
-        optax.adam(learning_rate),
+        optax.adam(learning_rate, eps=Config.adam_eps),
     )
 
     compute_policy_objective_fn = partial(compute_policy_objective)
@@ -534,11 +538,13 @@ def main(_):
                 actions, policy_extras = policy(obs, current_key)
                 actions = np.asarray(actions)
                 nstate = envs.step(actions)
+                reward = (envs.normalize_reward(nstate.reward, nstate.done, Config.gamma)
+                          if Config.normalize_rewards else nstate.reward)
                 state_extras = {'truncation': jnp.array([info['truncation'] for info in nstate.info])}
                 transition = Transition(
                     observation=obs,  # reuse: stored obs == the obs the policy acted on
                     action=actions,
-                    reward=nstate.reward,
+                    reward=reward,
                     discount=1 - nstate.done,
                     # don't re-update stats; this raw obs is counted when it
                     # becomes the next step's `obs`.
