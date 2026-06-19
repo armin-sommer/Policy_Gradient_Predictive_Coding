@@ -38,7 +38,8 @@ def run_one(algo, seed, env_name, total_steps, out_dir, wandb_project=None):
     config = REPO_ROOT / "configs" / f"mujoco_{env_name}.yaml"
     if not config.exists():
         config = CONFIG  # fall back to the HalfCheetah config
-    overrides = [f"agent.algorithm={algo}", f"seed={seed}", f"env.env_name={env_name}"]
+    overrides = [f"agent.algorithm={algo}", f"seed={seed}", f"env.env_name={env_name}",
+                 f"agent.experiment_name={algo}_mujoco"]  # run name: Exp_{algo}_mujoco__{env}__{seed}
     if total_steps is not None:
         overrides.append(f"train.total_steps={total_steps}")  # else use the config's budget
     if algo == "reinforce":
