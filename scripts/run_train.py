@@ -124,6 +124,12 @@ def _setup_wandb(cfg, run_name):
                 wandb.log({k: v for k, v in msg.items() if k != "training/total_steps"},
                           step=step)
     logging.getLogger().addHandler(_WandbHandler())
+    # The algo's logging.basicConfig is a no-op once a handler exists, so without
+    # this the run trains but writes nothing to stdout / the per-run log file.
+    stream = logging.StreamHandler(sys.stdout)
+    stream.setFormatter(logging.Formatter('%(message)s'))
+    logging.getLogger().addHandler(stream)
+    logging.getLogger().setLevel(logging.INFO)
     return wandb
 
 
