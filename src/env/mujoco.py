@@ -77,18 +77,27 @@ class MujocoVecEnv:
             info=info,
         )
 
-    def normalize_obs(self, obs):
-        """Normalize with a running mean/std (parallel Welford update)."""
+    def normalize_obs(self, obs, update=True):
+        """Normalize with a running mean/std (parallel Welford update).
+
+        `normalize_obs` is stateful: each call with update=True advances the
+        running stats. The rollout must therefore normalize each raw observation
+        exactly once (and reuse the result), or the stored obs won't match the
+        obs the policy acted on -> on-policy importance ratio != 1, which breaks
+        TRPO's natural gradient. Pass update=False to apply the current stats
+        without advancing them (next_observation, eval).
+        """
         obs = np.asarray(obs, dtype=np.float32)
-        batch_mean = obs.mean(axis=0)
-        batch_var = obs.var(axis=0)
-        n = obs.shape[0]
-        delta = batch_mean - self._obs_mean
-        tot = self._obs_count + n
-        self._obs_mean += delta * n / tot
-        m2 = self._obs_var * self._obs_count + batch_var * n + delta ** 2 * self._obs_count * n / tot
-        self._obs_var = m2 / tot
-        self._obs_count = tot
+        if update:
+            batch_mean = obs.mean(axis=0)
+            batch_var = obs.var(axis=0)
+            n = obs.shape[0]
+            delta = batch_mean - self._obs_mean
+            tot = self._obs_count + n
+            self._obs_mean += delta * n / tot
+            m2 = self._obs_var * self._obs_count + batch_var * n + delta ** 2 * self._obs_count * n / tot
+            self._obs_var = m2 / tot
+            self._obs_count = tot
         return np.clip((obs - self._obs_mean) / np.sqrt(self._obs_var + 1e-8),
                        -10.0, 10.0).astype(np.float32)
 

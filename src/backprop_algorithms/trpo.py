@@ -506,10 +506,14 @@ def main(_):
     training_walltime = 0
     scores = []
 
-    def _flatten_obs(obs):
+    def _flatten_obs(obs, update=True):
         if Config.use_cnn:
             return np.asarray(obs, dtype=np.uint8)
-        return envs.normalize_obs(obs.reshape(obs.shape[0], -1).astype(np.float32))
+        # update=True advances the running obs stats; the rollout normalizes each
+        # raw obs exactly once and reuses it so the stored obs == the policy's
+        # input (on-policy ratio stays 1, which TRPO's line search requires).
+        return envs.normalize_obs(
+            obs.reshape(obs.shape[0], -1).astype(np.float32), update=update)
 
     # training loop
     for training_step in range(1, num_training_steps + 1):
@@ -526,17 +530,19 @@ def main(_):
             transitions = []
             for unroll_step in range(Config.unroll_length):
                 current_key, key_generate_unroll = jax.random.split(key_generate_unroll)
-                obs = _flatten_obs(env_state.obs)
+                obs = _flatten_obs(env_state.obs)  # updates stats once for this step
                 actions, policy_extras = policy(obs, current_key)
                 actions = np.asarray(actions)
                 nstate = envs.step(actions)
                 state_extras = {'truncation': jnp.array([info['truncation'] for info in nstate.info])}
                 transition = Transition(
-                    observation=_flatten_obs(env_state.obs),
+                    observation=obs,  # reuse: stored obs == the obs the policy acted on
                     action=actions,
                     reward=nstate.reward,
                     discount=1 - nstate.done,
-                    next_observation=_flatten_obs(nstate.obs),
+                    # don't re-update stats; this raw obs is counted when it
+                    # becomes the next step's `obs`.
+                    next_observation=_flatten_obs(nstate.obs, update=False),
                     extras={
                         'policy_extras': policy_extras,
                         'state_extras': state_extras
@@ -590,7 +596,7 @@ def main(_):
             while True:
                 eval_steps += 1
                 current_key, eval_key = jax.random.split(eval_key)
-                obs = _flatten_obs(eval_state.obs)
+                obs = _flatten_obs(eval_state.obs, update=False)  # eval must not move train stats
                 actions, policy_extras = policy(obs, current_key)
                 actions = np.asarray(actions)
                 eval_state = eval_env.step(actions)
@@ -621,7 +627,7 @@ def main(_):
         while True:
             eval_steps += 1
             current_key, eval_key = jax.random.split(eval_key)
-            obs = _flatten_obs(eval_state.obs)
+            obs = _flatten_obs(eval_state.obs, update=False)  # eval must not move train stats
             actions, policy_extras = policy(obs, current_key)
             actions = np.asarray(actions)
             eval_state = eval_env.step(actions)
