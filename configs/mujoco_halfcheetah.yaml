@@ -27,8 +27,8 @@ train:
 agent:
   algorithm: "ppo"
   network: "mlp"               # no "cnn" substring -> MLP policy
-  policy_hidden_layer_sizes: [64, 64]
-  value_hidden_layer_sizes: [64, 64]
+  policy_hidden_layer_sizes: [256, 256]   # HalfCheetah needs capacity (2x64 caps it ~1800); 2x256 still canonical
+  value_hidden_layer_sizes: [256, 256]
   sota_init: true       # CleanRL/Engstrom: orthogonal init, tanh, state-indep log_std
 
 wandb:

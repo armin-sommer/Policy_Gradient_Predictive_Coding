@@ -1,0 +1,11 @@
+env,algo,n_seeds,best_mean,best_std,final_mean,final_std
+halfcheetah,ppo,3,2903.20,1084.88,2632.06,1141.94
+halfcheetah,trpo,3,1337.96,54.55,1004.06,322.88
+halfcheetah,reinforce,2,-214.77,50.71,-597.86,1.03
+hopper,ppo,3,1676.34,1168.33,1544.67,1221.28
+hopper,trpo,3,330.98,145.19,330.98,145.19
+inverted_pendulum,ppo,3,1000.00,0.00,1000.00,0.00
+inverted_pendulum,trpo,3,46.00,6.68,29.33,7.04
+inverted_pendulum,reinforce,3,5.67,3.09,2.00,0.00
+walker2d,ppo,3,3104.81,793.18,2649.73,871.74
+walker2d,trpo,3,486.08,29.95,445.96,33.02
