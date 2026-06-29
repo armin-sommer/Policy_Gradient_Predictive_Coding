@@ -30,6 +30,7 @@ from backprop_algorithms.common import (
     TrainingState,
     apply_policy_init_logit_bias,
     compute_gae,
+    evaluate,
     make_inference_fn,
     make_networks,
     strip_weak_type as _strip_weak_type,
@@ -51,10 +52,11 @@ class Config:
     distribution_mode = 'easy'
     arm_means = (1.0, 0.9)
     deterministic_rewards = True
+    episode_length = 1000
 
     # eval
     eval_env = True
-    num_eval_episodes = 10
+    num_eval_episodes = 32   # run this many eval episodes in parallel (vectorized)
     eval_every = 2
     deterministic_eval = True
     normalize_observations = True
@@ -311,6 +313,7 @@ def main(_):
         distribution_mode=Config.distribution_mode,
         arm_means=tuple(Config.arm_means),
         deterministic_rewards=Config.deterministic_rewards,
+        episode_length=Config.episode_length,
     )
     envs = make_vec_env(env_cfg)
     envs.seed(int(key_envs[0]))
@@ -495,15 +498,15 @@ def main(_):
     if Config.eval_env:
         eval_cfg = EnvConfig(
             env_name=Config.env_name,
-            num_envs=1,
+            num_envs=Config.num_eval_episodes,  # one parallel env per eval episode
             num_train_levels=Config.num_train_levels,
             distribution_mode=Config.distribution_mode,
             arm_means=tuple(Config.arm_means),
             deterministic_rewards=Config.deterministic_rewards,
+            episode_length=Config.episode_length,
         )
         eval_env = make_vec_env(eval_cfg, evaluate=True)
         eval_env.seed(int(eval_key[0]))
-        eval_state = eval_env.reset()
 
     global_step = 0
     start_time = time.time()
@@ -596,24 +599,13 @@ def main(_):
         # run eval
         if process_id == 0 and Config.eval_env and training_step % Config.eval_every == 0:
             eval_start_time = time.time()
-            eval_steps = 0
-            policy_params = _unpmap(training_state.params.policy)
-            policy = make_policy(policy_params, deterministic=Config.deterministic_eval)
-            while True:
-                eval_steps += 1
-                current_key, eval_key = jax.random.split(eval_key)
-                obs = _flatten_obs(eval_state.obs, update=False)  # eval must not move train stats
-                actions, policy_extras = policy(obs, current_key)
-                actions = np.asarray(actions)
-                eval_state = eval_env.step(actions)
-                if len(eval_env.returns) >= Config.num_eval_episodes:
-                    eval_returns, eval_ep_lengths = eval_env.evaluate()
-                    break
-            eval_state = eval_env.reset()
+            eval_returns, eval_ep_lengths, eval_key = evaluate(
+                eval_env, make_policy, _unpmap(training_state.params.policy),
+                Config.num_eval_episodes, eval_cfg.episode_length, _flatten_obs,
+                eval_key, deterministic=Config.deterministic_eval)
             eval_time = time.time() - eval_start_time
             eval_metrics = {
                 'eval/num_episodes': len(eval_returns),
-                'eval/num_steps': eval_steps,
                 'eval/mean_score': np.round(np.mean(eval_returns), 3),
                 'eval/std_score': np.round(np.std(eval_returns), 3),
                 'eval/mean_episode_length': np.mean(eval_ep_lengths),
@@ -627,23 +619,12 @@ def main(_):
 
     # final eval
     if process_id == 0 and Config.eval_env:
-        eval_steps = 0
-        policy_params = _unpmap(training_state.params.policy)
-        policy = make_policy(policy_params, deterministic=True)
-        while True:
-            eval_steps += 1
-            current_key, eval_key = jax.random.split(eval_key)
-            obs = _flatten_obs(eval_state.obs, update=False)  # eval must not move train stats
-            actions, policy_extras = policy(obs, current_key)
-            actions = np.asarray(actions)
-            eval_state = eval_env.step(actions)
-            if len(eval_env.returns) >= Config.num_eval_episodes:
-                eval_returns, eval_ep_lengths = eval_env.evaluate()
-                break
-        eval_state = eval_env.reset()
+        eval_returns, eval_ep_lengths, eval_key = evaluate(
+            eval_env, make_policy, _unpmap(training_state.params.policy),
+            Config.num_eval_episodes, eval_cfg.episode_length, _flatten_obs,
+            eval_key, deterministic=True)
         eval_metrics = {
             'final_eval/num_episodes': len(eval_returns),
-            'final_eval/num_steps': eval_steps,
             'final_eval/mean_score': np.mean(eval_returns),
             'final_eval/std_score': np.std(eval_returns),
             'final_eval/mean_episode_length': np.mean(eval_ep_lengths),

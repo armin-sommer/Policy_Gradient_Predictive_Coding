@@ -23,7 +23,7 @@ train:
   max_grad_norm: 0.5
   adam_eps: 1.0e-5           # PPO-MuJoCo convention
   normalize_rewards: true
-  eval_every: 10             # ~ every 200k env steps for the learning curve
+  eval_every: 50             # PPO does ~1.5k updates -> keep eval sparse
 
 agent:
   algorithm: "ppo"

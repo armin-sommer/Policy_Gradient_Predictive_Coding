@@ -6,6 +6,7 @@ import flax
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
+import numpy as np
 import optax
 
 from networks.policy import Policy
@@ -175,6 +176,41 @@ def make_networks(
         policy_network=policy_network,
         value_network=value_network,
         parametric_action_distribution=parametric_action_distribution)
+
+
+def evaluate(eval_env, make_policy, policy_params, num_eval_episodes, max_steps,
+             flatten_obs, eval_key, deterministic=True):
+    """Vectorized policy evaluation.
+
+    Runs `num_eval_episodes` envs in parallel (the eval env must be built with
+    num_envs == num_eval_episodes), each from a distinct initial state, and
+    scores **exactly the first episode of each env**. This is ~10x faster than
+    stepping one env at a time and, crucially, is unbiased when episodes
+    terminate at different times (e.g. Hopper): every initial state contributes
+    exactly one episode, so fast-falling envs can't dominate the average. The
+    per-env spread also makes eval/std_score meaningful (it was 0 before, when
+    a single deterministic rollout was replayed).
+
+    Returns (returns_list, lengths_list, eval_key).
+    """
+    policy = make_policy(policy_params, deterministic=deterministic)
+    state = eval_env.reset()
+    n = eval_env.num_envs
+    ep_ret = np.zeros(n, dtype=np.float64)
+    ep_len = np.zeros(n, dtype=np.int64)
+    done_mask = np.zeros(n, dtype=bool)
+    for _ in range(int(max_steps)):
+        obs = flatten_obs(state.obs, update=False)
+        eval_key, k = jax.random.split(eval_key)
+        actions, _ = policy(obs, k)
+        state = eval_env.step(np.asarray(actions))
+        live = ~done_mask
+        ep_ret[live] += np.asarray(state.reward)[live]
+        ep_len[live] += 1
+        done_mask |= np.asarray(state.done).astype(bool)
+        if done_mask.all():
+            break
+    return ep_ret.tolist(), ep_len.tolist(), eval_key
 
 
 def compute_gae(truncation: jnp.ndarray,

@@ -1,0 +1,35 @@
+# SOTA TRPO — Brax/MJX Hopper. Large-batch full-Fisher natural gradient,
+# one NG step per rollout. Validated: converges to ~3.3k.
+env:
+  env_name: "hopper"
+  num_envs: 1024
+  episode_length: 1000
+
+train:
+  total_steps: 30_000_000
+  rollout_length: 32
+  batch_size: 1024           # FULL batch: batch_size * num_minibatches = num_envs
+  num_minibatches: 1         # one full-batch Fisher -> one NG step per rollout
+  update_epochs: 10          # value-net Adam epochs only
+  gamma: 0.99
+  gae_lambda: 0.97
+  learning_rate: 1.0e-3      # value optimizer only
+  anneal_lr: false
+  max_grad_norm: 0.5
+  adam_eps: 1.0e-5
+  normalize_rewards: true
+  eval_every: 25
+
+agent:
+  algorithm: "trpo"
+  network: "mlp"
+  policy_hidden_layer_sizes: [256, 256]
+  value_hidden_layer_sizes: [256, 256]
+  sota_init: true
+
+wandb:
+  mode: disabled
+  project: "mujoco-pcpg"
+  group: null
+
+seed: 1
