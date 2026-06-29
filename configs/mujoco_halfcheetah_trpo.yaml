@@ -1,0 +1,40 @@
+# SOTA TRPO — Brax/MJX HalfCheetah.
+# Large-batch full-Fisher natural gradient (Schulman 2015 / Spinning Up): ONE
+# natural-gradient step per rollout, estimated on the whole rollout. Long horizon
+# + many updates + summed KL is the fix for the earlier non-convergence.
+# target_kl=0.01, cg_damping=0.1, cg_max_iterations=10, line_search 10/0.8 come
+# from the TRPO Config defaults (already SOTA) and need no YAML keys.
+#   python scripts/run_train.py --config configs/mujoco_halfcheetah_trpo.yaml --overrides seed=1
+env:
+  env_name: "halfcheetah"
+  num_envs: 1024
+  episode_length: 1000
+
+train:
+  total_steps: 30_000_000    # same env-step budget as PPO
+  rollout_length: 32         # longer GAE horizon than PPO (was 16)
+  batch_size: 1024           # FULL batch: batch_size * num_minibatches = num_envs
+  num_minibatches: 1         # one full-batch Fisher -> one NG step per rollout
+  update_epochs: 10          # value-net Adam epochs only (policy uses natural gradient)
+  gamma: 0.99
+  gae_lambda: 0.97           # TRPO / Spinning Up convention
+  learning_rate: 1.0e-3      # value optimizer only
+  anneal_lr: false
+  max_grad_norm: 0.5
+  adam_eps: 1.0e-5
+  normalize_rewards: true
+  eval_every: 5              # big batch -> few updates; keep dense for the curve
+
+agent:
+  algorithm: "trpo"
+  network: "mlp"
+  policy_hidden_layer_sizes: [256, 256]
+  value_hidden_layer_sizes: [256, 256]
+  sota_init: true
+
+wandb:
+  mode: disabled
+  project: "mujoco-pcpg"
+  group: null
+
+seed: 1

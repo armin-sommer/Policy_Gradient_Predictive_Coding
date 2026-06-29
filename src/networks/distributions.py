@@ -82,10 +82,14 @@ class ParametricDistribution(abc.ABC):
         q_distribution = self.create_dist(q_parameters)
 
         diff_log_scale = jnp.log(p_distribution.scale) - jnp.log(q_distribution.scale)
-        return (
+        per_dim_kl = (
             0.5 * jnp.square(p_distribution.loc / q_distribution.scale - q_distribution.loc / q_distribution.scale) +
             0.5 * (jnp.exp(2. * diff_log_scale) - 1) -
             diff_log_scale)
+        # Diagonal-Gaussian KL is the SUM over action dims, not the mean. TRPO's
+        # trust region (target_kl) must be in these units to match the literature;
+        # summing here makes target_kl=0.01 mean the same thing as in Schulman 2015.
+        return jnp.sum(per_dim_kl, axis=-1)
     
     def kl_divergence_mu(self, p_parameters, q_parameters):
         """Return the decoupled KL divergence for the mean of the given distributions."""

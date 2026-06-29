@@ -1,6 +1,6 @@
 # Benchmark Protocol (FROZEN) — PCPG continuous-control evaluation
 
-**Status:** DRAFT pending advisor sign-off on the 5 open decisions below.
+**Status:** APPROVED (advisor sign-off, Marco B., see §0).
 **Frozen on:** _<date>_  ·  **Git commit:** _<hash>_  ·  **Owner:** _<you>_
 
 Once signed off, nothing in §1–§8 changes for the paper's main results. Any change
@@ -10,15 +10,15 @@ reproduce standard baseline behavior before any PCPG claim is trusted.
 
 ---
 
-## 0. Open decisions (advisor sign-off required before freeze)
+## 0. Decisions (advisor-signed)
 
-| # | Decision | Proposed default (my lean) | Sign-off |
+| # | Decision | Resolution | Sign-off |
 |---|---|---|---|
-| 1 | Need Gymnasium MuJoCo results for parity, or is Brax/MJX-only OK? | Brax/MJX-only for main results | ☐ |
-| 2 | Authoritative env backend | **MJX-backed Brax** (named explicitly, see §1) | ☐ |
-| 3 | Primary scientific claim | Final return + seed stability (sample-eff. secondary) | ☐ |
-| 4 | One-time external calibration on Gymnasium (SB3/CleanRL)? | Yes — calibration only, not in the JAX loop | ☐ |
-| 5 | Freeze the whole protocol before large sweeps? | Yes | ☐ |
+| 1 | Need Gymnasium MuJoCo results for parity, or is Brax/MJX-only OK? | **Brax/MJX-only.** Old TRPO/PPO papers used older gym/MuJoCo → no direct comparison exists regardless. | ☑ |
+| 2 | Authoritative env backend | **MJX-backed Brax** (named explicitly, see §1) | ☑ |
+| 3 | Primary scientific claim | **Return-vs-env-steps learning curve** is the headline; **final return at a fixed budget** is the secondary metric. Wall-clock/sample-eff not central. | ☑ |
+| 4 | One-time external calibration on Gymnasium (SB3/CleanRL)? | **Optional / deprioritized.** Not required for the claim (no direct cross-version comparison anyway). Keep as a private sanity check only if PPO/TRPO look off. | ☑ |
+| 5 | Freeze the whole protocol before large sweeps? | **Yes** ("sounds like a plan"). | ☑ |
 
 ---
 
@@ -28,8 +28,12 @@ reproduce standard baseline behavior before any PCPG claim is trusted.
   repo is built on (`src/env/mujoco.py`). We report it as **"Brax/MJX"**, never as
   bare "MuJoCo" — rewards, termination, horizon, and action scaling are **not**
   identical to Gymnasium `*-v5` and we will not claim they are.
-- **Tasks (core):** `halfcheetah`, `hopper`, `walker2d`, `ant`.
-  **Stretch (compute permitting):** `humanoid`.
+- **Gating task:** `halfcheetah` — a representative env. **Get all algorithms
+  working here first** (esp. TRPO); only then expand the suite.
+- **Expansion (once HalfCheetah works):** `hopper`, `walker2d`, `ant`.
+  **Stretch (compute permitting, not currently run):** `humanoid`.
+- **Gymnasium parity is explicitly out of scope** (decision #1): we do not claim
+  numerical equivalence to gym/MuJoCo and do not need v5 results.
 - **Episode length:** 1000 (`episode_length=1000`, `action_repeat=1`).
 - **Action space:** continuous, `tanh`-squashed to [-1, 1] (`NormalTanhDistribution`).
 - Pinned versions (must match for every run): `jax==0.4.38 jaxlib==0.4.38
@@ -91,12 +95,15 @@ eval, and seed protocol below. Only the update rule differs.
 
 ## 7. Seeds & statistics
 
-- **10 seeds** per (task, algorithm); **5 minimum** for expensive tasks.
+- **5 seeds** per (task, algorithm) as the baseline across the board. Compute CIs;
+  **add more seeds only if the CIs are too wide to separate methods** (advisor call).
 - **Identical seed set across algorithms.**
-- Report **IQM + 95% stratified bootstrap CIs** and **probability of improvement**
-  (rliable / Agarwal et al. 2021). No bare mean±std as the headline.
-- Figures: per-task learning curves (mean ± CI band), aggregate performance profile,
-  final-score table, sample-efficiency-to-threshold. Optional: wall-clock plot.
+- **Headline figure (decision #3): return vs. env-steps learning curve**, mean line
+  with a 95% CI band, per task — this is the primary result.
+- **Secondary: final return at the fixed budget**, reported with uncertainty across
+  seeds (mean + 95% bootstrap CI). Use **IQM / probability-of-improvement** when
+  *comparing PCPG to baselines*; for single-algorithm sanity, mean + CI is fine.
+- No bare mean±std as the headline; no "best-over-evals".
 
 ## 8. Diagnostics (logged for every run, regardless of headline claim)
 
@@ -112,13 +119,19 @@ lockfile · hardware metadata. Stored under `results/<suite>/<task>_<algo>_seed<
 
 ## 10. Pre-sweep gate (must pass before large runs)
 
+- [ ] **TRPO converges on HalfCheetah** (the gating task) — the current blocker.
+      Likely fix: longer rollouts + bigger batch + higher step budget (it's
+      update-starved, not buggy: line search succeeds, KL ≈ 0.006 < target,
+      surrogate improves each step).
+- [ ] TRPO line-search success ≈ 1.0 and realized KL ≈ target on a smoke run.
 - [ ] Unit tests pass: `compute_gae` vs hand-computed trajectory; TRPO Fisher-vector
       product vs explicit dense Fisher on a tiny policy; line-search KL-respect.
-- [ ] PPO reaches plausible regime on all core tasks (sanity, not SOTA).
-- [ ] (If decision #4 = yes) external SB3/CleanRL PPO on Gymnasium confirms our
-      PPO/TRPO are order-of-magnitude correct.
-- [ ] TRPO line-search success ≈ 1.0 and realized KL ≈ target on a smoke run.
-- [ ] Protocol §1–§8 signed off (§0 table all ☑) and commit hash recorded above.
+- [ ] PPO reaches plausible regime on HalfCheetah (sanity, not SOTA). ✅ (~2.6k final)
+- [ ] (Optional, decision #4) external SB3/CleanRL PPO check — only if results look off.
+- [ ] Protocol §1–§8 confirmed (§0 table all ☑) and commit hash recorded above.
+
+REINFORCE is **not** a gate: it is expected to underperform on these envs (advisor
+confirmed) and serves only as the weak floor.
 
 ---
 

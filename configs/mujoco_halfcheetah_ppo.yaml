@@ -1,0 +1,40 @@
+# SOTA PPO — Brax/MJX HalfCheetah.
+# CleanRL/Engstrom recipe (network + init + normalization) at Brax parallel scale.
+# Network/init/norm already SOTA via sota_init; this config supplies the regime.
+#   python scripts/run_train.py --config configs/mujoco_halfcheetah_ppo.yaml --overrides seed=1
+env:
+  env_name: "halfcheetah"
+  num_envs: 1024             # main GPU-memory knob: 512 safe / 2048 for max return
+  episode_length: 1000
+
+train:
+  total_steps: 30_000_000    # same budget as the TRPO config (HC plateaus earlier, fine)
+  rollout_length: 20         # GAE horizon (was 16 — too short)
+  batch_size: 32
+  num_minibatches: 32        # batch_size * num_minibatches = 1024 = num_envs (required)
+  update_epochs: 4
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_coef: 0.2
+  ent_coef: 0.0
+  vf_coef: 0.5
+  learning_rate: 3.0e-4
+  anneal_lr: true            # SOTA: linear LR anneal toward 0
+  max_grad_norm: 0.5
+  adam_eps: 1.0e-5           # PPO-MuJoCo convention
+  normalize_rewards: true
+  eval_every: 10             # ~ every 200k env steps for the learning curve
+
+agent:
+  algorithm: "ppo"
+  network: "mlp"             # no "cnn" substring -> MLP policy
+  policy_hidden_layer_sizes: [256, 256]
+  value_hidden_layer_sizes: [256, 256]
+  sota_init: true            # orthogonal init, tanh, state-indep log_std
+
+wandb:
+  mode: disabled
+  project: "mujoco-pcpg"
+  group: null
+
+seed: 1
