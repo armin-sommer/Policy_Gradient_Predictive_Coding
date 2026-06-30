@@ -14,7 +14,7 @@
 set -u
 cd "$(dirname "$0")/.."
 
-ENVS="${ENVS:-halfcheetah hopper}"
+ENVS="${ENVS:-halfcheetah hopper walker2d ant}"
 ALGOS="${ALGOS:-ppo trpo}"
 SEEDS="${SEEDS:-1 2 3}"
 OUT="results/mujoco"
