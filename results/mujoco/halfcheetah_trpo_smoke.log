@@ -1,0 +1,73 @@
+E0629 09:19:53.389959    6260 ptx_compiler_helpers.cc:87] *** WARNING *** Invoking ptxas with version 12.4.131, which corresponds to a CUDA version <=12.6.2. CUDA versions 12.x.y up to and including 12.6.2 miscompile certain edge cases around clamping.
+Please upgrade to CUDA 12.6.3 or newer.
+|param: value|
+|experiment_name:  trpo_procgen|
+|seed:  1|
+|platform:  cpu|
+|write_logs_to_file:  False|
+|save_model:  True|
+|env_name:  halfcheetah|
+|num_envs:  1024|
+|num_train_levels:  200|
+|distribution_mode:  easy|
+|arm_means:  (1.0, 0.9)|
+|deterministic_rewards:  True|
+|eval_env:  True|
+|num_eval_episodes:  10|
+|eval_every:  5|
+|deterministic_eval:  True|
+|normalize_observations:  True|
+|total_timesteps:  500000|
+|learning_rate:  0.001|
+|unroll_length:  32|
+|anneal_lr:  False|
+|gamma:  0.99|
+|gae_lambda:  0.97|
+|batch_size:  1024|
+|num_minibatches:  1|
+|update_epochs:  10|
+|normalize_advantages:  True|
+|target_kl:  0.01|
+|cg_damping:  0.1|
+|cg_max_iterations:  10|
+|line_search_max_iter:  10|
+|line_search_shrinking_factor:  0.8|
+|vf_cost:  1.0|
+|max_grad_norm:  0.5|
+|reward_scaling:  1.0|
+|adam_eps:  1e-05|
+|sota_init:  True|
+|normalize_rewards:  True|
+|use_cnn:  False|
+|policy_hidden_layer_sizes:  [256, 256]|
+|value_hidden_layer_sizes:  [256, 256]|
+|activation:  <jax._src.custom_derivatives.custom_jvp object at 0x71248d439610>|
+|policy_init_logit_bias:  None|
+|checkpoint_dir:  /workspace/PCPG/outputs/checkpoints|
+Using JAX default device: cuda:0.
+/usr/local/lib/python3.11/dist-packages/brax/io/mjcf.py:480: UserWarning: Brax System, piplines and environments are not actively being maintained. Please see MJX for a well maintained JAX-based physics engine: https://github.com/google-deepmind/mujoco/tree/main/mjx. For a host of environments that use MJX, see: https://github.com/google-deepmind/mujoco_playground.
+  warnings.warn(
+Using JAX default device: cuda:0.
+Using JAX default device: cuda:0.
+Using JAX default device: cuda:0.
+/usr/local/lib/python3.11/dist-packages/brax/io/mjcf.py:480: UserWarning: Brax System, piplines and environments are not actively being maintained. Please see MJX for a well maintained JAX-based physics engine: https://github.com/google-deepmind/mujoco/tree/main/mjx. For a host of environments that use MJX, see: https://github.com/google-deepmind/mujoco_playground.
+  warnings.warn(
+Using JAX default device: cuda:0.
+Using JAX default device: cuda:0.
+{'training/total_steps': 32768, 'training/updates': 1, 'training/sps': np.float64(954.228), 'training/walltime': np.float64(34.34), 'training/rollout_time': np.float64(16.81), 'training/update_time': np.float64(17.53), 'training/iterations': 1.0, 'training/kl_div': 0.008333147503435612, 'training/line_search_success': 1.0, 'training/new_policy_objective': 0.017841940745711327, 'training/policy_objective': -2.3283064365386963e-08, 'training/value_loss': 2.690460205078125}
+{'training/total_steps': 65536, 'training/updates': 2, 'training/sps': np.float64(13710.264), 'training/walltime': np.float64(36.741), 'training/rollout_time': np.float64(2.357), 'training/update_time': np.float64(0.033), 'training/iterations': 1.0, 'training/kl_div': 0.007655873894691467, 'training/line_search_success': 1.0, 'training/new_policy_objective': 0.013060873374342918, 'training/policy_objective': 3.876630216836929e-08, 'training/value_loss': 0.725077748298645}
+{'training/total_steps': 98304, 'training/updates': 3, 'training/sps': np.float64(26071.805), 'training/walltime': np.float64(38.001), 'training/rollout_time': np.float64(1.227), 'training/update_time': np.float64(0.03), 'training/iterations': 1.0, 'training/kl_div': 0.00809076614677906, 'training/line_search_success': 1.0, 'training/new_policy_objective': 0.014670723117887974, 'training/policy_objective': 3.7834979593753815e-09, 'training/value_loss': 0.3060058653354645}
+{'training/total_steps': 131072, 'training/updates': 4, 'training/sps': np.float64(25607.961), 'training/walltime': np.float64(39.282), 'training/rollout_time': np.float64(1.248), 'training/update_time': np.float64(0.032), 'training/iterations': 1.0, 'training/kl_div': 0.007615738082677126, 'training/line_search_success': 1.0, 'training/new_policy_objective': 0.012871960178017616, 'training/policy_objective': -1.4202669262886047e-08, 'training/value_loss': 0.11462654918432236}
+{'training/total_steps': 163840, 'training/updates': 5, 'training/sps': np.float64(25977.766), 'training/walltime': np.float64(40.544), 'training/rollout_time': np.float64(1.23), 'training/update_time': np.float64(0.031), 'training/iterations': 1.0, 'training/kl_div': 0.007417724467813969, 'training/line_search_success': 1.0, 'training/new_policy_objective': 0.011693963780999184, 'training/policy_objective': 4.889443516731262e-09, 'training/value_loss': 0.06519343703985214}
+{'eval/num_episodes': 10, 'eval/num_steps': 10000, 'eval/mean_score': np.float64(-2.887), 'eval/std_score': np.float64(0.0), 'eval/mean_episode_length': np.float64(1000.0), 'eval/std_episode_length': np.float64(0.0), 'eval/eval_time': 150.13277888298035}
+{'training/total_steps': 196608, 'training/updates': 6, 'training/sps': np.float64(23953.997), 'training/walltime': np.float64(192.046), 'training/rollout_time': np.float64(1.336), 'training/update_time': np.float64(0.032), 'training/iterations': 1.0, 'training/kl_div': 0.007311115972697735, 'training/line_search_success': 1.0, 'training/new_policy_objective': 0.011572190560400486, 'training/policy_objective': -9.313225746154785e-09, 'training/value_loss': 0.06592094153165817}
+{'training/total_steps': 229376, 'training/updates': 7, 'training/sps': np.float64(23052.998), 'training/walltime': np.float64(193.469), 'training/rollout_time': np.float64(1.384), 'training/update_time': np.float64(0.037), 'training/iterations': 1.0, 'training/kl_div': 0.00684779230505228, 'training/line_search_success': 1.0, 'training/new_policy_objective': 0.011181945912539959, 'training/policy_objective': 1.7229467630386353e-08, 'training/value_loss': 0.054322000592947006}
+{'training/total_steps': 262144, 'training/updates': 8, 'training/sps': np.float64(23666.592), 'training/walltime': np.float64(194.855), 'training/rollout_time': np.float64(1.353), 'training/update_time': np.float64(0.032), 'training/iterations': 1.0, 'training/kl_div': 0.007247609551995993, 'training/line_search_success': 1.0, 'training/new_policy_objective': 0.012031876482069492, 'training/policy_objective': -1.1175870895385742e-08, 'training/value_loss': 0.0522526390850544}
+{'training/total_steps': 294912, 'training/updates': 9, 'training/sps': np.float64(23924.158), 'training/walltime': np.float64(196.226), 'training/rollout_time': np.float64(1.339), 'training/update_time': np.float64(0.031), 'training/iterations': 1.0, 'training/kl_div': 0.0074205826967954636, 'training/line_search_success': 1.0, 'training/new_policy_objective': 0.012019320391118526, 'training/policy_objective': -1.3969838619232178e-09, 'training/value_loss': 0.052672285586595535}
+{'training/total_steps': 327680, 'training/updates': 10, 'training/sps': np.float64(23811.017), 'training/walltime': np.float64(197.603), 'training/rollout_time': np.float64(1.343), 'training/update_time': np.float64(0.034), 'training/iterations': 1.0, 'training/kl_div': 0.007128301542252302, 'training/line_search_success': 1.0, 'training/new_policy_objective': 0.011887548491358757, 'training/policy_objective': 2.60770320892334e-08, 'training/value_loss': 0.05095668509602547}
+{'eval/num_episodes': 10, 'eval/num_steps': 10000, 'eval/mean_score': np.float64(-0.944), 'eval/std_score': np.float64(0.0), 'eval/mean_episode_length': np.float64(1000.0), 'eval/std_episode_length': np.float64(0.0), 'eval/eval_time': 140.18281531333923}
+{'training/total_steps': 360448, 'training/updates': 11, 'training/sps': np.float64(24742.577), 'training/walltime': np.float64(339.112), 'training/rollout_time': np.float64(1.292), 'training/update_time': np.float64(0.032), 'training/iterations': 1.0, 'training/kl_div': 0.0067268735729157925, 'training/line_search_success': 1.0, 'training/new_policy_objective': 0.011540736071765423, 'training/policy_objective': -1.6298145055770874e-09, 'training/value_loss': 0.05793474242091179}
+{'training/total_steps': 393216, 'training/updates': 12, 'training/sps': np.float64(25451.286), 'training/walltime': np.float64(340.401), 'training/rollout_time': np.float64(1.257), 'training/update_time': np.float64(0.031), 'training/iterations': 1.0, 'training/kl_div': 0.006817126180976629, 'training/line_search_success': 1.0, 'training/new_policy_objective': 0.012108324095606804, 'training/policy_objective': 6.51925802230835e-09, 'training/value_loss': 0.052984800189733505}
+{'training/total_steps': 425984, 'training/updates': 13, 'training/sps': np.float64(25238.658), 'training/walltime': np.float64(341.701), 'training/rollout_time': np.float64(1.268), 'training/update_time': np.float64(0.03), 'training/iterations': 1.0, 'training/kl_div': 0.007111330516636372, 'training/line_search_success': 1.0, 'training/new_policy_objective': 0.013151761144399643, 'training/policy_objective': -8.731149137020111e-09, 'training/value_loss': 0.053977321833372116}
+{'training/total_steps': 458752, 'training/updates': 14, 'training/sps': np.float64(25969.519), 'training/walltime': np.float64(342.964), 'training/rollout_time': np.float64(1.232), 'training/update_time': np.float64(0.03), 'training/iterations': 1.0, 'training/kl_div': 0.00723032932728529, 'training/line_search_success': 1.0, 'training/new_policy_objective': 0.014170858077704906, 'training/policy_objective': -1.1175870895385742e-08, 'training/value_loss': 0.06273582577705383}
+{'training/total_steps': 491520, 'training/updates': 15, 'training/sps': np.float64(25518.943), 'training/walltime': np.float64(344.25), 'training/rollout_time': np.float64(1.254), 'training/update_time': np.float64(0.03), 'training/iterations': 1.0, 'training/kl_div': 0.006593162659555674, 'training/line_search_success': 1.0, 'training/new_policy_objective': 0.01301177404820919, 'training/policy_objective': -5.605397745966911e-08, 'training/value_loss': 0.06957929581403732}
