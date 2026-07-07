@@ -1,4 +1,4 @@
-"""PC actor-critic — jpc policy + value head, TD(0) advantages."""
+"""PC actor-critic — jpc policy + value head, GAE(lambda) advantages."""
 
 import logging
 import os
@@ -21,6 +21,7 @@ from pc_algorithms.gaussian_policy import (
     sample_gaussian_action,
 )
 from pc_algorithms.pc_eval import evaluate_discrete_policy, evaluate_gaussian_policy
+from pc_algorithms.returns import compute_gae
 
 
 class Config:
@@ -47,10 +48,19 @@ class Config:
     total_timesteps = 60_000
     unroll_length = 250
     gamma = 0.99
+    # gae_lambda=0 reproduces the original TD(0) advantages; >0 bootstraps
+    # multi-step credit through the rollout boundary via the value net.
+    gae_lambda = 0.95
     learning_rate = 1e-2
     value_learning_rate = 1e-2
     target_scale = 1.0
     pc_steps_per_update = 1
+    # PPO-style data reuse: epochs x minibatches per rollout, policy targets
+    # recomputed each minibatch; value regresses fixed lambda-returns.
+    # Defaults (1, 1) reproduce the original single full-batch PC step.
+    update_epochs = 1
+    num_minibatches = 1
+    normalize_advantages = False
     max_t1 = 20
     normalize_rewards = False
     exp_std = True
@@ -177,7 +187,7 @@ def main(_):
 
     for training_step in range(1, num_training_steps + 1):
         update_time_start = time.time()
-        obs_buf, act_buf, param_buf, pre_tanh_buf = [], [], [], []
+        obs_buf, act_buf, pre_tanh_buf = [], [], []
         rew_buf, done_buf, next_obs_buf = [], [], []
 
         for _ in range(Config.unroll_length):
@@ -188,9 +198,9 @@ def main(_):
                 actions, pre_tanh = sample_gaussian_action(
                     key_act, params, action_size, exp_std=Config.exp_std)
                 act_np = np.asarray(actions)
+                pre_tanh_buf.append(np.asarray(pre_tanh))
             else:
                 actions = jr.categorical(key_act, params)
-                pre_tanh = None
                 act_np = np.asarray(actions)
             nstate = envs.step(act_np)
             reward = nstate.reward
@@ -198,56 +208,86 @@ def main(_):
                 reward = envs.normalize_reward(reward, nstate.done, Config.gamma)
             obs_buf.append(obs)
             act_buf.append(act_np)
-            param_buf.append(np.asarray(params))
-            if continuous:
-                pre_tanh_buf.append(np.asarray(pre_tanh))
             rew_buf.append(reward)
             done_buf.append(nstate.done)
             next_obs_buf.append(_flat_obs(nstate.obs, update=False))
             env_state = nstate
 
-        observations = jnp.concatenate([jnp.asarray(o) for o in obs_buf])
-        next_observations = jnp.concatenate([jnp.asarray(o) for o in next_obs_buf])
-        actions = jnp.concatenate([jnp.asarray(a) for a in act_buf])
-        params_all = jnp.concatenate([jnp.asarray(p) for p in param_buf])
-        rewards = jnp.concatenate([jnp.asarray(r) for r in rew_buf])
-        dones = jnp.concatenate([jnp.asarray(d) for d in done_buf])
+        # (T, N, ...) buffers; flatten time-major so rows align with GAE output
+        t_steps, n_envs = Config.unroll_length, Config.num_envs
+        obs_arr = np.stack(obs_buf)
+        next_obs_arr = np.stack(next_obs_buf)
+        rewards = np.stack(rew_buf)
+        dones = np.stack(done_buf)
 
-        values = pcn_forward(value_model, observations).squeeze(-1)
-        next_values = pcn_forward(value_model, next_observations).squeeze(-1)
-        td_targets = rewards + Config.gamma * (1.0 - dones) * next_values
-        advantages = td_targets - values
+        observations = obs_arr.reshape(-1, obs_arr.shape[-1])
+        next_observations = next_obs_arr.reshape(-1, next_obs_arr.shape[-1])
+
+        # old value estimates for GAE (computed once, before any update)
+        values = np.asarray(
+            pcn_forward(value_model, jnp.asarray(observations))).squeeze(-1)
+        next_values = np.asarray(
+            pcn_forward(value_model, jnp.asarray(next_observations))).squeeze(-1)
+        advantages, value_targets = compute_gae(
+            rewards, dones,
+            values.reshape(t_steps, n_envs),
+            next_values.reshape(t_steps, n_envs),
+            Config.gamma, Config.gae_lambda)
+        if Config.normalize_advantages:
+            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
         if continuous:
-            pre_tanh = jnp.concatenate([jnp.asarray(z) for z in pre_tanh_buf])
-            policy_targets = gaussian_pc_targets(
-                params_all, pre_tanh, advantages, action_size,
-                Config.target_scale, exp_std=Config.exp_std)
+            pre_tanh_flat = np.stack(pre_tanh_buf).reshape(-1, action_size)
+            actions_flat = None
         else:
-            policy_targets = discrete_pc_targets(
-                params_all, actions.astype(jnp.int32), advantages,
-                action_size, Config.target_scale)
+            pre_tanh_flat = None
+            actions_flat = np.stack(act_buf).reshape(-1)
 
-        for _ in range(Config.pc_steps_per_update):
-            value_result = jpc.make_pc_step(
-                model=value_model,
-                optim=value_optim,
-                opt_state=value_opt_state,
-                output=td_targets[:, None],
-                input=observations,
-                max_t1=Config.max_t1,
-            )
-            value_model, value_opt_state = value_result["model"], value_result["opt_state"]
+        batch_size = observations.shape[0]
+        mb_count = max(1, int(Config.num_minibatches))
+        usable = (batch_size // mb_count) * mb_count
 
-            policy_result = jpc.make_pc_step(
-                model=policy_model,
-                optim=policy_optim,
-                opt_state=policy_opt_state,
-                output=policy_targets,
-                input=observations,
-                max_t1=Config.max_t1,
-            )
-            policy_model, policy_opt_state = policy_result["model"], policy_result["opt_state"]
+        for _ in range(Config.update_epochs):
+            key, key_perm = jr.split(key)
+            perm = np.asarray(jr.permutation(key_perm, batch_size))[:usable]
+            for mb_idx in perm.reshape(mb_count, -1):
+                mb_obs = jnp.asarray(observations[mb_idx])
+                mb_adv = jnp.asarray(advantages[mb_idx])
+
+                # value regresses the fixed lambda-returns
+                for _ in range(Config.pc_steps_per_update):
+                    value_result = jpc.make_pc_step(
+                        model=value_model,
+                        optim=value_optim,
+                        opt_state=value_opt_state,
+                        output=jnp.asarray(value_targets[mb_idx])[:, None],
+                        input=mb_obs,
+                        max_t1=Config.max_t1,
+                    )
+                    value_model, value_opt_state = (
+                        value_result["model"], value_result["opt_state"])
+
+                # policy targets recomputed from the current policy
+                params_mb = pcn_forward(policy_model, mb_obs)
+                if continuous:
+                    policy_targets = gaussian_pc_targets(
+                        params_mb, jnp.asarray(pre_tanh_flat[mb_idx]), mb_adv,
+                        action_size, Config.target_scale, exp_std=Config.exp_std)
+                else:
+                    policy_targets = discrete_pc_targets(
+                        params_mb, jnp.asarray(actions_flat[mb_idx]).astype(jnp.int32),
+                        mb_adv, action_size, Config.target_scale)
+                for _ in range(Config.pc_steps_per_update):
+                    policy_result = jpc.make_pc_step(
+                        model=policy_model,
+                        optim=policy_optim,
+                        opt_state=policy_opt_state,
+                        output=policy_targets,
+                        input=mb_obs,
+                        max_t1=Config.max_t1,
+                    )
+                    policy_model, policy_opt_state = (
+                        policy_result["model"], policy_result["opt_state"])
 
         global_step += env_step_per_training_step
         metrics = {
@@ -259,7 +299,7 @@ def main(_):
             'training/value_pc_loss': float(value_result['loss']),
             'training/mean_value': float(values.mean()),
             'training/mean_reward': float(rewards.mean()),
-            'training/mean_advantage_abs': float(jnp.abs(advantages).mean()),
+            'training/mean_advantage_abs': float(np.abs(advantages).mean()),
         }
         logging.info(metrics)
 

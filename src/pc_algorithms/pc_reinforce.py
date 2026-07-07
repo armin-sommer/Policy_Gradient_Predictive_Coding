@@ -50,6 +50,12 @@ class Config:
     learning_rate = 1e-2
     target_scale = 1.0
     pc_steps_per_update = 1
+    # PPO-style data reuse: epochs x minibatches per rollout, targets
+    # recomputed from the current policy each minibatch. Defaults (1, 1)
+    # reproduce the original single full-batch PC step (bandit setup).
+    update_epochs = 1
+    num_minibatches = 1
+    normalize_advantages = False
     max_t1 = 20
     normalize_rewards = False
     exp_std = True
@@ -164,7 +170,7 @@ def main(_):
 
     for training_step in range(1, num_training_steps + 1):
         update_time_start = time.time()
-        obs_buf, act_buf, param_buf, pre_tanh_buf = [], [], [], []
+        obs_buf, act_buf, pre_tanh_buf = [], [], []
         rew_buf, done_buf = [], []
 
         for _ in range(Config.unroll_length):
@@ -175,9 +181,9 @@ def main(_):
                 actions, pre_tanh = sample_gaussian_action(
                     key_act, params, action_size, exp_std=Config.exp_std)
                 act_np = np.asarray(actions)
+                pre_tanh_buf.append(np.asarray(pre_tanh))
             else:
                 actions = jr.categorical(key_act, params)
-                pre_tanh = None
                 act_np = np.asarray(actions)
             nstate = envs.step(act_np)
             reward = nstate.reward
@@ -185,41 +191,57 @@ def main(_):
                 reward = envs.normalize_reward(reward, nstate.done, Config.gamma)
             obs_buf.append(obs)
             act_buf.append(act_np)
-            param_buf.append(np.asarray(params))
-            if continuous:
-                pre_tanh_buf.append(np.asarray(pre_tanh))
             rew_buf.append(reward)
             done_buf.append(nstate.done)
             env_state = nstate
 
-        observations = jnp.concatenate([jnp.asarray(o) for o in obs_buf])
-        actions = jnp.concatenate([jnp.asarray(a) for a in act_buf])
-        params_all = jnp.concatenate([jnp.asarray(p) for p in param_buf])
-        rewards = np.stack(rew_buf, axis=0)
-        dones = np.stack(done_buf, axis=0)
+        # (T, N, ...) buffers; flatten time-major so rows align with returns
+        obs_arr = np.stack(obs_buf)
+        rewards = np.stack(rew_buf)
+        dones = np.stack(done_buf)
         returns = compute_mc_returns(rewards, dones, Config.gamma)
         advantages = returns - returns.mean()
+        if Config.normalize_advantages:
+            advantages = advantages / (advantages.std() + 1e-8)
 
+        observations = obs_arr.reshape(-1, obs_arr.shape[-1])
         if continuous:
-            pre_tanh = jnp.concatenate([jnp.asarray(z) for z in pre_tanh_buf])
-            targets = gaussian_pc_targets(
-                params_all, pre_tanh, jnp.asarray(advantages), action_size,
-                Config.target_scale, exp_std=Config.exp_std)
+            pre_tanh_flat = np.stack(pre_tanh_buf).reshape(-1, action_size)
+            actions_flat = None
         else:
-            targets = discrete_pc_targets(
-                params_all, actions.astype(jnp.int32), jnp.asarray(advantages),
-                action_size, Config.target_scale)
+            pre_tanh_flat = None
+            actions_flat = np.stack(act_buf).reshape(-1)
 
-        for _ in range(Config.pc_steps_per_update):
-            result = jpc.make_pc_step(
-                model=model,
-                optim=optim,
-                opt_state=opt_state,
-                output=targets,
-                input=observations,
-                max_t1=Config.max_t1,
-            )
-            model, opt_state = result["model"], result["opt_state"]
+        batch_size = observations.shape[0]
+        mb_count = max(1, int(Config.num_minibatches))
+        usable = (batch_size // mb_count) * mb_count
+
+        for _ in range(Config.update_epochs):
+            key, key_perm = jr.split(key)
+            perm = np.asarray(jr.permutation(key_perm, batch_size))[:usable]
+            for mb_idx in perm.reshape(mb_count, -1):
+                mb_obs = jnp.asarray(observations[mb_idx])
+                mb_adv = jnp.asarray(advantages[mb_idx])
+                # recompute targets from the current policy (PPO-style reuse)
+                params_mb = policy_forward(model, mb_obs)
+                if continuous:
+                    targets = gaussian_pc_targets(
+                        params_mb, jnp.asarray(pre_tanh_flat[mb_idx]), mb_adv,
+                        action_size, Config.target_scale, exp_std=Config.exp_std)
+                else:
+                    targets = discrete_pc_targets(
+                        params_mb, jnp.asarray(actions_flat[mb_idx]).astype(jnp.int32),
+                        mb_adv, action_size, Config.target_scale)
+                for _ in range(Config.pc_steps_per_update):
+                    result = jpc.make_pc_step(
+                        model=model,
+                        optim=optim,
+                        opt_state=opt_state,
+                        output=targets,
+                        input=mb_obs,
+                        max_t1=Config.max_t1,
+                    )
+                    model, opt_state = result["model"], result["opt_state"]
 
         global_step += env_step_per_training_step
         metrics = {

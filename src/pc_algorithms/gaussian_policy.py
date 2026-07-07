@@ -3,20 +3,29 @@
 The PC target rule mirrors the discrete softmax case:
   discrete:  target = logits + A * (one_hot(a) - pi)
   Gaussian:  target_mu = mu + A * (z - mu) / sigma^2
-             target_log_std = log_std + A * ((z - mu) / sigma)^2 - 1)
+             target_log_std = log_std + A * (((z - mu) / sigma)^2 - 1)
 
 where z is the pre-tanh Gaussian sample and A is the advantage.
 Actions sent to Brax are tanh(z), matching the backprop SOTA stack.
+
+log_std is clamped to [LOG_STD_MIN, LOG_STD_MAX] both when sampling and in the
+targets: the mu-target amplifies by 1/sigma^2, so an unbounded shrinking sigma
+makes targets explode, while a growing sigma washes out the policy. Clamping
+bounds both failure modes (sigma in ~[0.14, 1.65]).
 """
 
 import jax
 import jax.numpy as jnp
 import jax.random as jr
 
+LOG_STD_MIN = -2.0
+LOG_STD_MAX = 0.5
+
 
 def split_gaussian_params(params, action_dim, exp_std=True, min_std=0.001):
     loc, log_scale = jnp.split(params, 2, axis=-1)
     if exp_std:
+        log_scale = jnp.clip(log_scale, LOG_STD_MIN, LOG_STD_MAX)
         scale = jnp.exp(log_scale)
     else:
         scale = jax.nn.softplus(log_scale) + min_std
@@ -44,7 +53,9 @@ def gaussian_pc_targets(
     z_score = (pre_tanh - loc) / scale
     adv = advantages[:, None]
     loc_target = loc + target_scale * adv * z_score / scale
-    log_scale_target = log_scale + target_scale * adv * (jnp.square(z_score) - 1.0)
+    log_scale_target = jnp.clip(
+        log_scale + target_scale * adv * (jnp.square(z_score) - 1.0),
+        LOG_STD_MIN, LOG_STD_MAX)
     return jnp.concatenate([loc_target, log_scale_target], axis=-1)
 
 
