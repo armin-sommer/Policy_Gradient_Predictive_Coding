@@ -1,11 +1,11 @@
-# Gaussian PCPG-MC — Hopper SOTA tier (matches mujoco_hopper_ppo.yaml: [256,256], 1024 envs, 30M steps).
+# Gaussian PCPG-MC — Hopper SOTA tier (matches mujoco_hopper_ppo.yaml: [256,256], 1024 envs, 5M steps).
 env:
   env_name: "hopper"
   num_envs: 1024
   episode_length: 1000
 
 train:
-  total_steps: 30_000_000
+  total_steps: 5_000_000
   rollout_length: 20
   gamma: 0.99
   learning_rate: 3.0e-4
