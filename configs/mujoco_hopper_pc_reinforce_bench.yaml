@@ -11,12 +11,12 @@ train:
   total_steps: 1_000_000
   rollout_length: 256
   gamma: 0.99
-  learning_rate: 1.0e-3
+  learning_rate: 3.0e-4
   target_scale: 1.0
   max_t1: 20
   pc_steps_per_update: 1
-  update_epochs: 4
-  num_minibatches: 8
+  update_epochs: 2
+  num_minibatches: 4
   normalize_advantages: true
   normalize_rewards: true
   eval_every: 2
