@@ -1,4 +1,4 @@
-# Gaussian PCPG-MC on Brax Hopper (mjx).
+# Gaussian PCPG-MC on Brax Hopper (bench tier alias — see _bench.yaml).
 env:
   env_name: "hopper"
   num_envs: 256
@@ -18,8 +18,8 @@ train:
 
 agent:
   algorithm: "pc_reinforce"
-  experiment_name: "pc_reinforce_mujoco"
-  width: 256
+  experiment_name: "pc_reinforce_mujoco_bench"
+  width: 64
   depth: 2
   exp_std: true
 

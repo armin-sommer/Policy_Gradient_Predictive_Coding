@@ -1,26 +1,25 @@
-# Gaussian PCPG actor-critic on Brax Hopper (bench tier alias — see _bench.yaml).
+# Gaussian PCPG-MC — Hopper SOTA tier (matches mujoco_hopper_ppo.yaml: [256,256], 1024 envs, 30M steps).
 env:
   env_name: "hopper"
-  num_envs: 256
+  num_envs: 1024
   episode_length: 1000
 
 train:
-  total_steps: 1_000_000
-  rollout_length: 16
+  total_steps: 30_000_000
+  rollout_length: 20
   gamma: 0.99
   learning_rate: 3.0e-4
-  value_learning_rate: 3.0e-4
   target_scale: 1.0
   max_t1: 20
   pc_steps_per_update: 1
   normalize_rewards: true
-  eval_every: 10
+  eval_every: 50
   num_eval_episodes: 10
 
 agent:
-  algorithm: "pc_actor_critic"
-  experiment_name: "pc_actor_critic_mujoco_bench"
-  width: 64
+  algorithm: "pc_reinforce"
+  experiment_name: "pc_reinforce_mujoco_sota"
+  width: 256
   depth: 2
   exp_std: true
 

@@ -1,4 +1,4 @@
-# Gaussian PCPG actor-critic on Brax Hopper (bench tier alias — see _bench.yaml).
+# Gaussian PCPG actor-critic — Hopper bench tier ([64,64], 256 envs, 1M steps).
 env:
   env_name: "hopper"
   num_envs: 256
