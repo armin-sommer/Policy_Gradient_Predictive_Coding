@@ -1,0 +1,37 @@
+# MuJoCo benchmark — Walker2d (Brax/mjx). PPO/TRPO target ~3,000-3,600.
+# Early-termination task (falls over).
+env:
+  env_name: "walker2d"
+  num_envs: 256
+  episode_length: 1000
+
+train:
+  total_steps: 2_000_000
+  rollout_length: 16
+  batch_size: 8
+  num_minibatches: 32
+  update_epochs: 4
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_coef: 0.2
+  ent_coef: 0.0
+  vf_coef: 0.5
+  learning_rate: 3.0e-4
+  anneal_lr: false
+  max_grad_norm: 0.5
+  adam_eps: 1.0e-5
+  normalize_rewards: true
+
+agent:
+  algorithm: "ppo"
+  network: "mlp"                   # must NOT contain "cnn" -> MLP policy for vector obs
+  policy_hidden_layer_sizes: [64, 64]
+  value_hidden_layer_sizes: [64, 64]
+  sota_init: true       # CleanRL/Engstrom: orthogonal init, tanh, state-indep log_std
+
+wandb:
+  mode: disabled
+  project: "mujoco-pcpg"
+  group: null
+
+seed: 42

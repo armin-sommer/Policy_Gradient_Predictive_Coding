@@ -6,6 +6,7 @@ import flax
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
+import numpy as np
 import optax
 
 from networks.policy import Policy
@@ -16,6 +17,8 @@ from networks.networks import (
     make_value_network,
     make_cnn_policy_network,
     make_cnn_value_network,
+    make_sota_policy_network,
+    make_sota_value_network,
 )
 from networks.distributions import (
     NormalTanhDistribution,
@@ -125,12 +128,21 @@ def make_networks(
         activation: ActivationFn = nn.swish,
         discrete_policy: bool = True,
         use_cnn: bool = False,
+        sota_init: bool = False,
     ) -> Networks:
-    """Build the shared policy/value networks and action distribution."""
+    """Build the shared policy/value networks and action distribution.
+
+    sota_init=True selects the CleanRL/Engstrom continuous-control stack
+    (orthogonal init, tanh, state-independent log_std with exp std). It only
+    applies to the MLP continuous path (Gaussian, non-CNN); the discrete and
+    CNN paths ignore it.
+    """
+    sota = sota_init and not discrete_policy and not use_cnn
     if discrete_policy:
         parametric_action_distribution = DiscreteDistribution(param_size=action_size)
     else:
-        parametric_action_distribution = NormalTanhDistribution(event_size=action_size)
+        parametric_action_distribution = NormalTanhDistribution(
+            event_size=action_size, exp_std=sota)
     if use_cnn:
         policy_network = make_cnn_policy_network(
             parametric_action_distribution.param_size,
@@ -141,6 +153,14 @@ def make_networks(
             observation_size,
             hidden_layer_sizes=value_hidden_layer_sizes,
             activation=activation)
+    elif sota:
+        # tanh is baked in (part of the canonical spec)
+        policy_network = make_sota_policy_network(
+            action_size, observation_size,
+            hidden_layer_sizes=policy_hidden_layer_sizes, activation=nn.tanh)
+        value_network = make_sota_value_network(
+            observation_size,
+            hidden_layer_sizes=value_hidden_layer_sizes, activation=nn.tanh)
     else:
         policy_network = make_policy_network(
             parametric_action_distribution.param_size,
@@ -156,6 +176,41 @@ def make_networks(
         policy_network=policy_network,
         value_network=value_network,
         parametric_action_distribution=parametric_action_distribution)
+
+
+def evaluate(eval_env, make_policy, policy_params, num_eval_episodes, max_steps,
+             flatten_obs, eval_key, deterministic=True):
+    """Vectorized policy evaluation.
+
+    Runs `num_eval_episodes` envs in parallel (the eval env must be built with
+    num_envs == num_eval_episodes), each from a distinct initial state, and
+    scores **exactly the first episode of each env**. This is ~10x faster than
+    stepping one env at a time and, crucially, is unbiased when episodes
+    terminate at different times (e.g. Hopper): every initial state contributes
+    exactly one episode, so fast-falling envs can't dominate the average. The
+    per-env spread also makes eval/std_score meaningful (it was 0 before, when
+    a single deterministic rollout was replayed).
+
+    Returns (returns_list, lengths_list, eval_key).
+    """
+    policy = make_policy(policy_params, deterministic=deterministic)
+    state = eval_env.reset()
+    n = eval_env.num_envs
+    ep_ret = np.zeros(n, dtype=np.float64)
+    ep_len = np.zeros(n, dtype=np.int64)
+    done_mask = np.zeros(n, dtype=bool)
+    for _ in range(int(max_steps)):
+        obs = flatten_obs(state.obs, update=False)
+        eval_key, k = jax.random.split(eval_key)
+        actions, _ = policy(obs, k)
+        state = eval_env.step(np.asarray(actions))
+        live = ~done_mask
+        ep_ret[live] += np.asarray(state.reward)[live]
+        ep_len[live] += 1
+        done_mask |= np.asarray(state.done).astype(bool)
+        if done_mask.all():
+            break
+    return ep_ret.tolist(), ep_len.tolist(), eval_key
 
 
 def compute_gae(truncation: jnp.ndarray,

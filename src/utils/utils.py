@@ -12,6 +12,8 @@ class EnvConfig:
     # bandit-only options (ignored by Procgen)
     arm_means: tuple = (1.0, 0.9)
     deterministic_rewards: bool = True
+    # mujoco-only option (ignored by bandit/Procgen)
+    episode_length: int = 1000
 
 
 @dataclass

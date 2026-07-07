@@ -1,0 +1,39 @@
+# MuJoCo backprop baseline (PPO, continuous control) on Brax HalfCheetah (mjx).
+# Standard recipe starting point: 4x128 MLP, lr 3e-4. Run on a non-Blackwell GPU
+# (A100). Switch algorithm via --overrides agent.algorithm=trpo (reinforce needs
+# env.num_envs=1). Tune total_steps per task.
+env:
+  env_name: "halfcheetah"
+  num_envs: 256
+  episode_length: 1000
+
+train:
+  total_steps: 5_000_000
+  rollout_length: 16
+  batch_size: 8
+  num_minibatches: 32          # batch_size * num_minibatches must divide num_envs
+  update_epochs: 4
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_coef: 0.2
+  ent_coef: 0.0
+  vf_coef: 0.5
+  learning_rate: 3.0e-4
+  anneal_lr: false
+  max_grad_norm: 0.5
+  adam_eps: 1.0e-5
+  normalize_rewards: true
+
+agent:
+  algorithm: "ppo"
+  network: "mlp"               # no "cnn" substring -> MLP policy
+  policy_hidden_layer_sizes: [256, 256]   # HalfCheetah needs capacity (2x64 caps it ~1800); 2x256 still canonical
+  value_hidden_layer_sizes: [256, 256]
+  sota_init: true       # CleanRL/Engstrom: orthogonal init, tanh, state-indep log_std
+
+wandb:
+  mode: disabled
+  project: "mujoco-pcpg"
+  group: null
+
+seed: 42

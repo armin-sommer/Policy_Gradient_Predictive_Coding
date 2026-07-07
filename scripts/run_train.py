@@ -42,7 +42,14 @@ KEY_MAP = {
     ("train", "learning_rate"): "learning_rate",
     ("train", "anneal_lr"): "anneal_lr",
     ("train", "max_grad_norm"): "max_grad_norm",
+    ("train", "adam_eps"): "adam_eps",
+    ("train", "normalize_rewards"): "normalize_rewards",
+    ("agent", "sota_init"): "sota_init",
+    ("agent", "experiment_name"): "experiment_name",
     ("agent", "policy_init_logit_bias"): "policy_init_logit_bias",
+    ("agent", "policy_hidden_layer_sizes"): "policy_hidden_layer_sizes",
+    ("agent", "value_hidden_layer_sizes"): "value_hidden_layer_sizes",
+    ("train", "eval_every"): "eval_every",
     ("seed",): "seed",
 }
 
@@ -114,13 +121,21 @@ def _setup_wandb(cfg, run_name):
     # the algorithm files. Each algo logs metric dicts via logging.info(...).
     import logging
     class _WandbHandler(logging.Handler):
+        _last_step = 0  # eval dicts have no total_steps; reuse the latest train step
         def emit(self, record):
             msg = record.msg
             if isinstance(msg, dict):
-                step = msg.get("training/total_steps")
+                if "training/total_steps" in msg:
+                    _WandbHandler._last_step = int(msg["training/total_steps"])
                 wandb.log({k: v for k, v in msg.items() if k != "training/total_steps"},
-                          step=step)
+                          step=_WandbHandler._last_step)
     logging.getLogger().addHandler(_WandbHandler())
+    # The algo's logging.basicConfig is a no-op once a handler exists, so without
+    # this the run trains but writes nothing to stdout / the per-run log file.
+    stream = logging.StreamHandler(sys.stdout)
+    stream.setFormatter(logging.Formatter('%(message)s'))
+    logging.getLogger().addHandler(stream)
+    logging.getLogger().setLevel(logging.INFO)
     return wandb
 
 

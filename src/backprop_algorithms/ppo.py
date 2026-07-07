@@ -29,6 +29,7 @@ from backprop_algorithms.common import (
     Networks as PPONetworks,
     TrainingState,
     compute_gae,
+    evaluate,
     make_inference_fn,
     make_networks as make_ppo_networks,
     strip_weak_type as _strip_weak_type,
@@ -50,10 +51,11 @@ class Config:
     distribution_mode = 'easy'
     arm_means = (1.0, 0.9)
     deterministic_rewards = True
+    episode_length = 1000
 
     # eval
     eval_env = True
-    num_eval_episodes = 10
+    num_eval_episodes = 32   # run this many eval episodes in parallel (vectorized)
     eval_every = 5
     deterministic_eval = True
     normalize_observations = True
@@ -75,6 +77,9 @@ class Config:
     max_grad_norm = 0.5
     target_kl = None
     reward_scaling = 1.
+    adam_eps = 1e-8          # SOTA: 1e-5
+    sota_init = False        # SOTA: orthogonal init + tanh + state-indep log_std
+    normalize_rewards = False  # SOTA: running return-std reward scaling (train only)
 
     # policy params
     use_cnn = True  # NatureCNN encoder for Procgen pixel obs
@@ -203,6 +208,7 @@ def main(_):
         distribution_mode=Config.distribution_mode,
         arm_means=tuple(Config.arm_means),
         deterministic_rewards=Config.deterministic_rewards,
+        episode_length=Config.episode_length,
     )
     envs = make_vec_env(env_cfg)
     envs.seed(int(key_envs[0]))
@@ -220,8 +226,9 @@ def main(_):
         policy_hidden_layer_sizes=Config.policy_hidden_layer_sizes,
         value_hidden_layer_sizes=Config.value_hidden_layer_sizes,
         activation=Config.activation,
-        discrete_policy=True,
+        discrete_policy=not getattr(envs.action_space, "continuous", False),
         use_cnn=Config.use_cnn,
+        sota_init=Config.sota_init,
     )
     make_policy = make_inference_fn(ppo_network)
 
@@ -235,7 +242,7 @@ def main(_):
         learning_rate = Config.learning_rate
     optimizer = optax.chain(
         optax.clip_by_global_norm(Config.max_grad_norm),
-        optax.adam(learning_rate),
+        optax.adam(learning_rate, eps=Config.adam_eps),
     )
 
     loss_fn = partial(
@@ -323,25 +330,28 @@ def main(_):
     if Config.eval_env:
         eval_cfg = EnvConfig(
             env_name=Config.env_name,
-            num_envs=1,
+            num_envs=Config.num_eval_episodes,  # one parallel env per eval episode
             num_train_levels=Config.num_train_levels,
             distribution_mode=Config.distribution_mode,
             arm_means=tuple(Config.arm_means),
             deterministic_rewards=Config.deterministic_rewards,
+            episode_length=Config.episode_length,
         )
         eval_env = make_vec_env(eval_cfg, evaluate=True)
         eval_env.seed(int(eval_key[0]))
-        eval_state = eval_env.reset()
 
     global_step = 0
     start_time = time.time()
     training_walltime = 0
     scores = []
 
-    def _flatten_obs(obs):
+    def _flatten_obs(obs, update=True):
         if Config.use_cnn:
             return np.asarray(obs, dtype=np.uint8)
-        return envs.normalize_obs(obs.reshape(obs.shape[0], -1).astype(np.float32))
+        # update=True advances the running obs stats; normalize each raw obs once
+        # and reuse it so the stored obs == the policy's input (on-policy ratio 1).
+        return envs.normalize_obs(
+            obs.reshape(obs.shape[0], -1).astype(np.float32), update=update)
 
     # training loop
     for training_step in range(1, num_training_steps + 1):
@@ -358,17 +368,19 @@ def main(_):
             transitions = []
             for unroll_step in range(Config.unroll_length):
                 current_key, key_generate_unroll = jax.random.split(key_generate_unroll)
-                obs = _flatten_obs(env_state.obs)
+                obs = _flatten_obs(env_state.obs)  # updates stats once for this step
                 actions, policy_extras = policy(obs, current_key)
                 actions = np.asarray(actions)
                 nstate = envs.step(actions)
+                reward = (envs.normalize_reward(nstate.reward, nstate.done, Config.gamma)
+                          if Config.normalize_rewards else nstate.reward)
                 state_extras = {'truncation': jnp.array([info['truncation'] for info in nstate.info])}
                 transition = Transition(
-                    observation=_flatten_obs(env_state.obs),
+                    observation=obs,  # reuse: stored obs == the obs the policy acted on
                     action=actions,
-                    reward=nstate.reward,
+                    reward=reward,
                     discount=1 - nstate.done,
-                    next_observation=_flatten_obs(nstate.obs),
+                    next_observation=_flatten_obs(nstate.obs, update=False),
                     extras={
                         'policy_extras': policy_extras,
                         'state_extras': state_extras
@@ -416,24 +428,13 @@ def main(_):
         # run eval
         if process_id == 0 and Config.eval_env and training_step % Config.eval_every == 0:
             eval_start_time = time.time()
-            eval_steps = 0
-            policy_params = _unpmap(training_state.params.policy)
-            policy = make_policy(policy_params, deterministic=Config.deterministic_eval)
-            while True:
-                eval_steps += 1
-                current_key, eval_key = jax.random.split(eval_key)
-                obs = _flatten_obs(eval_state.obs)
-                actions, policy_extras = policy(obs, current_key)
-                actions = np.asarray(actions)
-                eval_state = eval_env.step(actions)
-                if len(eval_env.returns) >= Config.num_eval_episodes:
-                    eval_returns, eval_ep_lengths = eval_env.evaluate()
-                    break
-            eval_state = eval_env.reset()
+            eval_returns, eval_ep_lengths, eval_key = evaluate(
+                eval_env, make_policy, _unpmap(training_state.params.policy),
+                Config.num_eval_episodes, eval_cfg.episode_length, _flatten_obs,
+                eval_key, deterministic=Config.deterministic_eval)
             eval_time = time.time() - eval_start_time
             eval_metrics = {
                 'eval/num_episodes': len(eval_returns),
-                'eval/num_steps': eval_steps,
                 'eval/mean_score': np.round(np.mean(eval_returns), 3),
                 'eval/std_score': np.round(np.std(eval_returns), 3),
                 'eval/mean_episode_length': np.mean(eval_ep_lengths),
@@ -447,23 +448,12 @@ def main(_):
 
     # final eval
     if process_id == 0 and Config.eval_env:
-        eval_steps = 0
-        policy_params = _unpmap(training_state.params.policy)
-        policy = make_policy(policy_params, deterministic=True)
-        while True:
-            eval_steps += 1
-            current_key, eval_key = jax.random.split(eval_key)
-            obs = _flatten_obs(eval_state.obs)
-            actions, policy_extras = policy(obs, current_key)
-            actions = np.asarray(actions)
-            eval_state = eval_env.step(actions)
-            if len(eval_env.returns) >= Config.num_eval_episodes:
-                eval_returns, eval_ep_lengths = eval_env.evaluate()
-                break
-        eval_state = eval_env.reset()
+        eval_returns, eval_ep_lengths, eval_key = evaluate(
+            eval_env, make_policy, _unpmap(training_state.params.policy),
+            Config.num_eval_episodes, eval_cfg.episode_length, _flatten_obs,
+            eval_key, deterministic=True)
         eval_metrics = {
             'final_eval/num_episodes': len(eval_returns),
-            'final_eval/num_steps': eval_steps,
             'final_eval/mean_score': np.mean(eval_returns),
             'final_eval/std_score': np.std(eval_returns),
             'final_eval/mean_episode_length': np.mean(eval_ep_lengths),
