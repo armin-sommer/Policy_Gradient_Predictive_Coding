@@ -15,6 +15,12 @@ import jpc
 
 from env import make_vec_env
 from utils.utils import EnvConfig
+from pc_algorithms.gaussian_policy import (
+    discrete_pc_targets,
+    gaussian_pc_targets,
+    sample_gaussian_action,
+)
+from pc_algorithms.pc_eval import evaluate_discrete_policy, evaluate_gaussian_policy
 
 
 class Config:
@@ -30,6 +36,7 @@ class Config:
     distribution_mode = 'easy'
     arm_means = (1.0, 0.9)
     deterministic_rewards = True
+    episode_length = 1000
 
     # eval
     eval_env = True
@@ -45,6 +52,8 @@ class Config:
     target_scale = 1.0
     pc_steps_per_update = 1
     max_t1 = 20
+    normalize_rewards = False
+    exp_std = True
 
     width = 32
     depth = 2
@@ -95,12 +104,15 @@ def main(_):
         distribution_mode=Config.distribution_mode,
         arm_means=tuple(Config.arm_means),
         deterministic_rewards=Config.deterministic_rewards,
+        episode_length=Config.episode_length,
     )
     envs = make_vec_env(env_cfg)
     envs.seed(int(key_envs[0]))
     env_state = envs.reset()
 
+    continuous = getattr(envs.action_space, "continuous", False)
     action_size = envs.action_space.n
+    policy_output_dim = 2 * action_size if continuous else action_size
     obs_dim = int(np.prod(env_state.obs.shape[1:]))
 
     policy_model = jpc.make_mlp(
@@ -108,11 +120,13 @@ def main(_):
         input_dim=obs_dim,
         width=Config.width,
         depth=Config.depth,
-        output_dim=action_size,
+        output_dim=policy_output_dim,
         act_fn=Config.act_fn,
         use_bias=True,
     )
     if Config.policy_init_logit_bias is not None:
+        if continuous:
+            raise ValueError("policy_init_logit_bias is only supported for discrete policies")
         policy_model = _set_final_layer(policy_model, Config.policy_init_logit_bias)
 
     value_model = jpc.make_mlp(
@@ -135,9 +149,12 @@ def main(_):
         activities = jpc.init_activities_with_ffwd(model=model, input=obs)
         return activities[-1]
 
-    def _flat_obs(obs):
-        return envs.normalize_obs(
-            np.asarray(obs).reshape(obs.shape[0], -1).astype(np.float32))
+    def _flat_obs(obs, update=True):
+        raw = np.asarray(obs).reshape(obs.shape[0], -1).astype(np.float32)
+        try:
+            return envs.normalize_obs(raw, update=update)
+        except TypeError:
+            return envs.normalize_obs(raw)
 
     if Config.eval_env:
         eval_cfg = EnvConfig(
@@ -147,6 +164,7 @@ def main(_):
             distribution_mode=Config.distribution_mode,
             arm_means=tuple(Config.arm_means),
             deterministic_rewards=Config.deterministic_rewards,
+            episode_length=Config.episode_length,
         )
         eval_env = make_vec_env(eval_cfg, evaluate=True)
         eval_env.seed(int(eval_key[0]))
@@ -159,26 +177,39 @@ def main(_):
 
     for training_step in range(1, num_training_steps + 1):
         update_time_start = time.time()
-        obs_buf, act_buf, logit_buf, rew_buf, done_buf, next_obs_buf = [], [], [], [], [], []
+        obs_buf, act_buf, param_buf, pre_tanh_buf = [], [], [], []
+        rew_buf, done_buf, next_obs_buf = [], [], []
 
         for _ in range(Config.unroll_length):
             obs = _flat_obs(env_state.obs)
-            logits = pcn_forward(policy_model, jnp.asarray(obs))
+            params = pcn_forward(policy_model, jnp.asarray(obs))
             key, key_act = jr.split(key)
-            actions = jr.categorical(key_act, logits)
-            nstate = envs.step(np.asarray(actions))
+            if continuous:
+                actions, pre_tanh = sample_gaussian_action(
+                    key_act, params, action_size, exp_std=Config.exp_std)
+                act_np = np.asarray(actions)
+            else:
+                actions = jr.categorical(key_act, params)
+                pre_tanh = None
+                act_np = np.asarray(actions)
+            nstate = envs.step(act_np)
+            reward = nstate.reward
+            if Config.normalize_rewards and hasattr(envs, "normalize_reward"):
+                reward = envs.normalize_reward(reward, nstate.done, Config.gamma)
             obs_buf.append(obs)
-            act_buf.append(np.asarray(actions))
-            logit_buf.append(np.asarray(logits))
-            rew_buf.append(nstate.reward)
+            act_buf.append(act_np)
+            param_buf.append(np.asarray(params))
+            if continuous:
+                pre_tanh_buf.append(np.asarray(pre_tanh))
+            rew_buf.append(reward)
             done_buf.append(nstate.done)
-            next_obs_buf.append(_flat_obs(nstate.obs))
+            next_obs_buf.append(_flat_obs(nstate.obs, update=False))
             env_state = nstate
 
         observations = jnp.concatenate([jnp.asarray(o) for o in obs_buf])
         next_observations = jnp.concatenate([jnp.asarray(o) for o in next_obs_buf])
         actions = jnp.concatenate([jnp.asarray(a) for a in act_buf])
-        logits = jnp.concatenate([jnp.asarray(l) for l in logit_buf])
+        params_all = jnp.concatenate([jnp.asarray(p) for p in param_buf])
         rewards = jnp.concatenate([jnp.asarray(r) for r in rew_buf])
         dones = jnp.concatenate([jnp.asarray(d) for d in done_buf])
 
@@ -187,9 +218,15 @@ def main(_):
         td_targets = rewards + Config.gamma * (1.0 - dones) * next_values
         advantages = td_targets - values
 
-        pi = jax.nn.softmax(logits)
-        onehot = jax.nn.one_hot(actions, action_size)
-        policy_targets = logits + Config.target_scale * advantages[:, None] * (onehot - pi)
+        if continuous:
+            pre_tanh = jnp.concatenate([jnp.asarray(z) for z in pre_tanh_buf])
+            policy_targets = gaussian_pc_targets(
+                params_all, pre_tanh, advantages, action_size,
+                Config.target_scale, exp_std=Config.exp_std)
+        else:
+            policy_targets = discrete_pc_targets(
+                params_all, actions.astype(jnp.int32), advantages,
+                action_size, Config.target_scale)
 
         for _ in range(Config.pc_steps_per_update):
             value_result = jpc.make_pc_step(
@@ -227,18 +264,21 @@ def main(_):
         logging.info(metrics)
 
         if Config.eval_env and training_step % Config.eval_every == 0:
-            eval_state = eval_env.reset()
-            obs = _flat_obs(eval_state.obs)
-            eval_logits = pcn_forward(policy_model, jnp.asarray(obs))
-            key, key_eval = jr.split(key)
-            eval_actions = jr.categorical(key_eval, eval_logits)
-            eval_env.step(np.asarray(eval_actions))
-            eval_returns, eval_ep_lengths = eval_env.evaluate()
+            eval_time_start = time.time()
+            if continuous:
+                eval_returns, eval_ep_lengths, eval_key = evaluate_gaussian_policy(
+                    eval_env, pcn_forward, policy_model, action_size, _flat_obs,
+                    eval_key, Config.episode_length, exp_std=Config.exp_std)
+            else:
+                eval_returns, eval_ep_lengths, eval_key = evaluate_discrete_policy(
+                    eval_env, pcn_forward, policy_model, _flat_obs,
+                    eval_key, Config.episode_length)
             eval_metrics = {
                 'eval/num_episodes': len(eval_returns),
                 'eval/mean_score': np.round(np.mean(eval_returns), 4),
                 'eval/std_score': np.round(np.std(eval_returns), 4),
                 'eval/mean_episode_length': np.mean(eval_ep_lengths),
+                'eval/eval_time': np.round(time.time() - eval_time_start, 3),
             }
             logging.info(eval_metrics)
 

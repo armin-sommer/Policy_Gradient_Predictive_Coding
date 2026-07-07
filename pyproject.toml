@@ -20,6 +20,7 @@ dependencies = [
     "wandb",
     "matplotlib",
     "jpc @ git+https://github.com/thebuckleylab/jpc",  # predictive coding (equinox/diffrax)
+    "brax>=0.10.0",                                    # MuJoCo via mjx backend
 ]
 
 # Install with: pip install -e ".[gpu]"
