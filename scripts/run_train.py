@@ -36,6 +36,7 @@ KEY_MAP = {
     ("train", "pc_steps_per_update"): "pc_steps_per_update",
     ("train", "optimizer"): "optimizer",
     ("agent", "act_fn"): "act_fn",
+    ("agent", "discretize_bins"): "discretize_bins",
     ("train", "normalize_advantages"): "normalize_advantages",
     ("train", "num_eval_episodes"): "num_eval_episodes",
     ("train", "value_learning_rate"): "value_learning_rate",

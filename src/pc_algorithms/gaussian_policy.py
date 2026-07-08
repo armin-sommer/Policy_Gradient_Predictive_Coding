@@ -80,6 +80,36 @@ def discrete_pc_targets(logits, actions, advantages, action_size, target_scale):
     return logits + target_scale * advantages[:, None] * (onehot - pi)
 
 
+# --- Discretized continuous control: factorized categorical over torque bins.
+# Each action dim gets `bins` logits; bins map to a uniform grid on [-1, 1].
+# The categorical score (onehot - pi) is bounded in [-1, 1], so this head has
+# no 1/sigma^2 amplification, no sigma/exploration coupling, and no tanh
+# saturation (cf. Tang & Agrawal 2020 for discretized on-policy MuJoCo).
+
+def bin_grid(bins):
+    return jnp.linspace(-1.0, 1.0, bins)
+
+
+def sample_discretized_action(key, logits, action_dim, bins):
+    lg = logits.reshape(*logits.shape[:-1], action_dim, bins)
+    idx = jr.categorical(key, lg)
+    return bin_grid(bins)[idx], idx
+
+
+def discretized_pc_targets(logits, indices, advantages, action_dim, bins,
+                           target_scale):
+    lg = logits.reshape(*logits.shape[:-1], action_dim, bins)
+    pi = jax.nn.softmax(lg, axis=-1)
+    onehot = jax.nn.one_hot(indices, bins)
+    t = lg + target_scale * advantages[:, None, None] * (onehot - pi)
+    return t.reshape(logits.shape)
+
+
+def deterministic_discretized_action(logits, action_dim, bins):
+    lg = logits.reshape(*logits.shape[:-1], action_dim, bins)
+    return bin_grid(bins)[jnp.argmax(lg, axis=-1)]
+
+
 def deterministic_gaussian_action(params, action_dim, exp_std=True, min_std=0.001):
     loc, _, _ = split_gaussian_params(params, action_dim, exp_std, min_std)
     return jnp.tanh(loc)
