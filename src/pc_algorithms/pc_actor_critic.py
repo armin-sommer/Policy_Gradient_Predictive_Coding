@@ -67,6 +67,9 @@ class Config:
     max_t1 = 20
     normalize_rewards = False
     exp_std = True
+    # 'adam' or 'sgd'. Innocenti et al. (2305.18188) derive PC's trust-region
+    # property for plain GD on the equilibrated energy; Adam re-preconditions it.
+    optimizer = 'adam'
 
     width = 32
     depth = 2
@@ -152,9 +155,10 @@ def main(_):
         use_bias=True,
     )
 
-    policy_optim = optax.adam(Config.learning_rate)
+    make_optim = optax.sgd if Config.optimizer == 'sgd' else optax.adam
+    policy_optim = make_optim(Config.learning_rate)
     policy_opt_state = policy_optim.init((eqx.filter(policy_model, eqx.is_array), None))
-    value_optim = optax.adam(Config.value_learning_rate)
+    value_optim = make_optim(Config.value_learning_rate)
     value_opt_state = value_optim.init((eqx.filter(value_model, eqx.is_array), None))
 
     @eqx.filter_jit

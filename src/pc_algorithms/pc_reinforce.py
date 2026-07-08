@@ -62,6 +62,9 @@ class Config:
     max_t1 = 20
     normalize_rewards = False
     exp_std = True
+    # 'adam' or 'sgd'. Innocenti et al. (2305.18188) derive PC's trust-region
+    # property for plain GD on the equilibrated energy; Adam re-preconditions it.
+    optimizer = 'adam'
 
     width = 32
     depth = 2
@@ -137,7 +140,10 @@ def main(_):
             raise ValueError("policy_init_logit_bias is only supported for discrete policies")
         model = _set_final_layer(model, Config.policy_init_logit_bias)
 
-    optim = optax.adam(Config.learning_rate)
+    if Config.optimizer == 'sgd':
+        optim = optax.sgd(Config.learning_rate)
+    else:
+        optim = optax.adam(Config.learning_rate)
     opt_state = optim.init((eqx.filter(model, eqx.is_array), None))
 
     @eqx.filter_jit
