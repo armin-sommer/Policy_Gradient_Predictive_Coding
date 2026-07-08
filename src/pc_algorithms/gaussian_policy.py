@@ -1,27 +1,17 @@
 """Gaussian policy helpers for continuous-control PCPG.
 
-The Gaussian PC targets use the Euclidean score with a trust-region clip on
-the mu offset (in sigma units):
-  target_mu      = mu + clip(A * z_score / sigma, +-MU_OFFSET_CLIP_SIGMA) * sigma
-  target_log_std = log_std + A * (z_score^2 - 1)
+The PC target rule mirrors the discrete softmax case:
+  discrete:  target = logits + A * (one_hot(a) - pi)
+  Gaussian:  target_mu = mu + A * (z - mu) / sigma^2
+             target_log_std = log_std + A * (((z - mu) / sigma)^2 - 1)
 
-where z is the pre-tanh Gaussian sample, z_score = (z - mu) / sigma, and A is
-the advantage.
-
-Why this form: diagnostics showed the raw Euclidean score A*(z-mu)/sigma^2
-learns well (typical mu-targets 1-5 sigma) but its 1/sigma^2 amplification
-(x55 at the sigma clamp floor) turns rare advantage outliers into 50-100 sigma
-targets and ~18-sigma one-update policy jumps -> irreversible collapse. The
-exact natural-gradient target (sigma^2 * score, Fisher-preconditioned) fixes
-the tail but shrinks typical updates by sigma^2 (~5-50x) and stalls learning
-(~150 return vs 985). The clip cuts only the destructive tail while leaving
-typical updates identical to the rule that learns.
-
+where z is the pre-tanh Gaussian sample and A is the advantage.
 Actions sent to Brax are tanh(z), matching the backprop SOTA stack.
-log_std is clamped to [LOG_STD_MIN, LOG_STD_MAX] when sampling and in targets
-(sigma in ~[0.14, 1.65]).
 
-The discrete rule mirrors the softmax case: target = logits + A*(one_hot - pi).
+log_std is clamped to [LOG_STD_MIN, LOG_STD_MAX] both when sampling and in the
+targets: the mu-target amplifies by 1/sigma^2, so an unbounded shrinking sigma
+makes targets explode, while a growing sigma washes out the policy. Clamping
+bounds both failure modes (sigma in ~[0.14, 1.65]).
 """
 
 import jax
@@ -30,7 +20,6 @@ import jax.random as jr
 
 LOG_STD_MIN = -2.0
 LOG_STD_MAX = 0.5
-MU_OFFSET_CLIP_SIGMA = 6.0
 
 
 def split_gaussian_params(params, action_dim, exp_std=True, min_std=0.001):
@@ -63,11 +52,7 @@ def gaussian_pc_targets(
         params, action_dim, exp_std, min_std)
     z_score = (pre_tanh - loc) / scale
     adv = advantages[:, None]
-    # Euclidean score A*z_score/sigma, trust-region clipped in sigma units
-    loc_offset = jnp.clip(
-        target_scale * adv * z_score / scale,
-        -MU_OFFSET_CLIP_SIGMA, MU_OFFSET_CLIP_SIGMA) * scale
-    loc_target = loc + loc_offset
+    loc_target = loc + target_scale * adv * z_score / scale
     log_scale_target = jnp.clip(
         log_scale + target_scale * adv * (jnp.square(z_score) - 1.0),
         LOG_STD_MIN, LOG_STD_MAX)
