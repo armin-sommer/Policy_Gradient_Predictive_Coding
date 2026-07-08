@@ -19,17 +19,11 @@ from pc_algorithms.gaussian_policy import (
     LOG_STD_MAX,
     LOG_STD_MIN,
     discrete_pc_targets,
-    discretized_pc_targets,
     gaussian_pc_targets,
-    sample_discretized_action,
     sample_gaussian_action,
     split_gaussian_params,
 )
-from pc_algorithms.pc_eval import (
-    evaluate_discrete_policy,
-    evaluate_discretized_policy,
-    evaluate_gaussian_policy,
-)
+from pc_algorithms.pc_eval import evaluate_discrete_policy, evaluate_gaussian_policy
 from pc_algorithms.returns import compute_gae
 
 
@@ -76,9 +70,6 @@ class Config:
     # 'adam' or 'sgd'. Innocenti et al. (2305.18188) derive PC's trust-region
     # property for plain GD on the equilibrated energy; Adam re-preconditions it.
     optimizer = 'adam'
-    # >0: replace the Gaussian head with a factorized categorical over this
-    # many torque bins per action dim (bounded softmax score, no sigma).
-    discretize_bins = 0
 
     width = 32
     depth = 2
@@ -137,14 +128,7 @@ def main(_):
 
     continuous = getattr(envs.action_space, "continuous", False)
     action_size = envs.action_space.n
-    bins = int(Config.discretize_bins or 0) if continuous else 0
-    gaussian = continuous and not bins
-    if bins:
-        policy_output_dim = action_size * bins
-    elif continuous:
-        policy_output_dim = 2 * action_size
-    else:
-        policy_output_dim = action_size
+    policy_output_dim = 2 * action_size if continuous else action_size
     obs_dim = int(np.prod(env_state.obs.shape[1:]))
 
     policy_model = jpc.make_mlp(
@@ -210,19 +194,14 @@ def main(_):
 
     for training_step in range(1, num_training_steps + 1):
         update_time_start = time.time()
-        obs_buf, act_buf, pre_tanh_buf, idx_buf = [], [], [], []
+        obs_buf, act_buf, pre_tanh_buf = [], [], []
         rew_buf, done_buf, next_obs_buf = [], [], []
 
         for _ in range(Config.unroll_length):
             obs = _flat_obs(env_state.obs)
             params = pcn_forward(policy_model, jnp.asarray(obs))
             key, key_act = jr.split(key)
-            if bins:
-                actions, idx = sample_discretized_action(
-                    key_act, params, action_size, bins)
-                act_np = np.asarray(actions)
-                idx_buf.append(np.asarray(idx))
-            elif continuous:
+            if continuous:
                 actions, pre_tanh = sample_gaussian_action(
                     key_act, params, action_size, exp_std=Config.exp_std)
                 act_np = np.asarray(actions)
@@ -264,12 +243,11 @@ def main(_):
         if Config.normalize_advantages:
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
-        pre_tanh_flat = idx_flat = actions_flat = None
-        if bins:
-            idx_flat = np.stack(idx_buf).reshape(-1, action_size)
-        elif continuous:
+        if continuous:
             pre_tanh_flat = np.stack(pre_tanh_buf).reshape(-1, action_size)
+            actions_flat = None
         else:
+            pre_tanh_flat = None
             actions_flat = np.stack(act_buf).reshape(-1)
 
         batch_size = observations.shape[0]
@@ -279,7 +257,7 @@ def main(_):
         # fixed probe slice for collapse diagnostics (pre/post-update policy)
         n_probe = min(2048, batch_size)
         probe_obs = jnp.asarray(observations[:n_probe])
-        params_pre = pcn_forward(policy_model, probe_obs) if gaussian else None
+        params_pre = pcn_forward(policy_model, probe_obs) if continuous else None
 
         for _ in range(Config.update_epochs):
             key, key_perm = jr.split(key)
@@ -303,11 +281,7 @@ def main(_):
 
                 # policy targets recomputed from the current policy
                 params_mb = pcn_forward(policy_model, mb_obs)
-                if bins:
-                    policy_targets = discretized_pc_targets(
-                        params_mb, jnp.asarray(idx_flat[mb_idx]).astype(jnp.int32),
-                        mb_adv, action_size, bins, Config.target_scale)
-                elif continuous:
+                if continuous:
                     policy_targets = gaussian_pc_targets(
                         params_mb, jnp.asarray(pre_tanh_flat[mb_idx]), mb_adv,
                         action_size, Config.target_scale, exp_std=Config.exp_std)
@@ -341,7 +315,7 @@ def main(_):
             'diag/value_explained_var': float(
                 1.0 - np.var(value_targets - values) / (np.var(value_targets) + 1e-8)),
         }
-        if gaussian:
+        if continuous:
             params_post = pcn_forward(policy_model, probe_obs)
             loc_pre, scale_pre, _ = split_gaussian_params(
                 params_pre, action_size, exp_std=Config.exp_std)
@@ -370,11 +344,7 @@ def main(_):
 
         if Config.eval_env and training_step % Config.eval_every == 0:
             eval_time_start = time.time()
-            if bins:
-                eval_returns, eval_ep_lengths, eval_key = evaluate_discretized_policy(
-                    eval_env, pcn_forward, policy_model, action_size, bins,
-                    _flat_obs, eval_key, Config.episode_length)
-            elif continuous:
+            if continuous:
                 eval_returns, eval_ep_lengths, eval_key = evaluate_gaussian_policy(
                     eval_env, pcn_forward, policy_model, action_size, _flat_obs,
                     eval_key, Config.episode_length, exp_std=Config.exp_std)
