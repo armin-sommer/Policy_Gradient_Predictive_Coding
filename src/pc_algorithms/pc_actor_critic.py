@@ -16,9 +16,12 @@ import jpc
 from env import make_vec_env
 from utils.utils import EnvConfig
 from pc_algorithms.gaussian_policy import (
+    LOG_STD_MAX,
+    LOG_STD_MIN,
     discrete_pc_targets,
     gaussian_pc_targets,
     sample_gaussian_action,
+    split_gaussian_params,
 )
 from pc_algorithms.pc_eval import evaluate_discrete_policy, evaluate_gaussian_policy
 from pc_algorithms.returns import compute_gae
@@ -247,6 +250,11 @@ def main(_):
         mb_count = max(1, int(Config.num_minibatches))
         usable = (batch_size // mb_count) * mb_count
 
+        # fixed probe slice for collapse diagnostics (pre/post-update policy)
+        n_probe = min(2048, batch_size)
+        probe_obs = jnp.asarray(observations[:n_probe])
+        params_pre = pcn_forward(policy_model, probe_obs) if continuous else None
+
         for _ in range(Config.update_epochs):
             key, key_perm = jr.split(key)
             perm = np.asarray(jr.permutation(key_perm, batch_size))[:usable]
@@ -300,7 +308,34 @@ def main(_):
             'training/mean_value': float(values.mean()),
             'training/mean_reward': float(rewards.mean()),
             'training/mean_advantage_abs': float(np.abs(advantages).mean()),
+            'diag/value_explained_var': float(
+                1.0 - np.var(value_targets - values) / (np.var(value_targets) + 1e-8)),
         }
+        if continuous:
+            params_post = pcn_forward(policy_model, probe_obs)
+            loc_pre, scale_pre, _ = split_gaussian_params(
+                params_pre, action_size, exp_std=Config.exp_std)
+            loc_post, _, log_std_post = split_gaussian_params(
+                params_post, action_size, exp_std=Config.exp_std)
+            drift = jnp.abs(loc_post - loc_pre) / scale_pre
+            probe_targets = gaussian_pc_targets(
+                params_pre, jnp.asarray(pre_tanh_flat[:n_probe]),
+                jnp.asarray(advantages[:n_probe]), action_size,
+                Config.target_scale, exp_std=Config.exp_std)
+            mu_target_mag = jnp.abs(
+                probe_targets[:, :action_size] - loc_pre)
+            metrics.update({
+                'diag/log_std_mean': float(log_std_post.mean()),
+                'diag/log_std_min': float(log_std_post.min()),
+                'diag/frac_std_at_min': float((log_std_post <= LOG_STD_MIN + 1e-3).mean()),
+                'diag/frac_std_at_max': float((log_std_post >= LOG_STD_MAX - 1e-3).mean()),
+                'diag/mu_abs_mean': float(jnp.abs(loc_post).mean()),
+                'diag/policy_drift_mean': float(drift.mean()),
+                'diag/policy_drift_max': float(drift.max()),
+                'diag/mu_target_mag_mean': float(mu_target_mag.mean()),
+                'diag/mu_target_mag_max': float(mu_target_mag.max()),
+                'diag/pretanh_sat_frac': float((np.abs(pre_tanh_flat) > 2.0).mean()),
+            })
         logging.info(metrics)
 
         if Config.eval_env and training_step % Config.eval_every == 0:
