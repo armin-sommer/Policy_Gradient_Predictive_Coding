@@ -1,21 +1,21 @@
 """Gaussian policy helpers for continuous-control PCPG.
 
-The Gaussian PC targets are the *natural-gradient* step in distribution space:
-the raw score is premultiplied by the inverse Fisher, which is exact and
-diagonal for a diagonal Gaussian in (mu, log_std) coordinates:
-  F = diag(1/sigma^2, 2)   =>
-  target_mu      = mu + A * (z - mu)                     [sigma^2 * score]
-  target_log_std = log_std + (A / 2) * (z_score^2 - 1)   [score / 2]
+The Gaussian PC targets use the Euclidean score with a trust-region clip on
+the mu offset (in sigma units):
+  target_mu      = mu + clip(A * z_score / sigma, +-MU_OFFSET_CLIP_SIGMA) * sigma
+  target_log_std = log_std + A * (z_score^2 - 1)
 
 where z is the pre-tanh Gaussian sample, z_score = (z - mu) / sigma, and A is
-the advantage. The tanh squashing leaves the Fisher unchanged (invertible
-transform of the sample), so this is exact for the tanh-Gaussian too.
+the advantage.
 
-The Euclidean score A*(z-mu)/sigma^2 amplifies mu-targets by 1/sigma^2 (x55 at
-the sigma clamp floor), which diagnostics showed was the collapse trigger:
-rare advantage outliers produced targets 50-100 sigma away and one-update
-policy jumps of ~18 sigma. The natural target bounds offsets at |A|*sigma; a
-+-MU_OFFSET_CLIP_SIGMA*sigma clip backstops the remaining advantage tail.
+Why this form: diagnostics showed the raw Euclidean score A*(z-mu)/sigma^2
+learns well (typical mu-targets 1-5 sigma) but its 1/sigma^2 amplification
+(x55 at the sigma clamp floor) turns rare advantage outliers into 50-100 sigma
+targets and ~18-sigma one-update policy jumps -> irreversible collapse. The
+exact natural-gradient target (sigma^2 * score, Fisher-preconditioned) fixes
+the tail but shrinks typical updates by sigma^2 (~5-50x) and stalls learning
+(~150 return vs 985). The clip cuts only the destructive tail while leaving
+typical updates identical to the rule that learns.
 
 Actions sent to Brax are tanh(z), matching the backprop SOTA stack.
 log_std is clamped to [LOG_STD_MIN, LOG_STD_MAX] when sampling and in targets
@@ -30,7 +30,7 @@ import jax.random as jr
 
 LOG_STD_MIN = -2.0
 LOG_STD_MAX = 0.5
-MU_OFFSET_CLIP_SIGMA = 3.0
+MU_OFFSET_CLIP_SIGMA = 6.0
 
 
 def split_gaussian_params(params, action_dim, exp_std=True, min_std=0.001):
@@ -63,14 +63,13 @@ def gaussian_pc_targets(
         params, action_dim, exp_std, min_std)
     z_score = (pre_tanh - loc) / scale
     adv = advantages[:, None]
-    # natural gradient: sigma^2 * (A * (z - mu) / sigma^2) = A * (z - mu)
+    # Euclidean score A*z_score/sigma, trust-region clipped in sigma units
     loc_offset = jnp.clip(
-        target_scale * adv * z_score,
+        target_scale * adv * z_score / scale,
         -MU_OFFSET_CLIP_SIGMA, MU_OFFSET_CLIP_SIGMA) * scale
     loc_target = loc + loc_offset
-    # natural gradient: (1/2) * (A * (z_score^2 - 1))
     log_scale_target = jnp.clip(
-        log_scale + 0.5 * target_scale * adv * (jnp.square(z_score) - 1.0),
+        log_scale + target_scale * adv * (jnp.square(z_score) - 1.0),
         LOG_STD_MIN, LOG_STD_MAX)
     return jnp.concatenate([loc_target, log_scale_target], axis=-1)
 
