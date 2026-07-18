@@ -1,7 +1,8 @@
 """Aggregate the MuJoCo benchmark runs into a shareable summary.
 
 Reads the per-run logs in results/mujoco/ (one file per env/algo/seed, named
-`{env}_{algo}_seed{N}.log`), reconstructs each run's eval/mean_score trajectory
+`{env}_{algo}_seed{N}.log`, or `{env}_{tier}_{algo}_seed{N}.log` for the PCPG
+sweep), reconstructs each run's eval/mean_score trajectory
 over env steps, then produces:
 
   1. results/mujoco/summary_all.csv  -- best & final score, mean +/- std over seeds
@@ -29,8 +30,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 ALGOS = ["ppo", "trpo", "reinforce"]
 ALGO_ORDER = {a: i for i, a in enumerate(ALGOS)}
 
-# {env}_{algo}_seed{N}.log  (env may contain underscores, so anchor on the algo)
-FILENAME_RE = re.compile(r"^(?P<env>.+)_(?P<algo>ppo|trpo|reinforce)_seed(?P<seed>\d+)\.log$")
+# {env}_{algo}_seed{N}.log, or {env}_{tier}_{algo}_seed{N}.log for the PCPG sweep
+# (env may contain underscores; non-greedy env + fixed algo alternation anchor it).
+FILENAME_RE = re.compile(
+    r"^(?P<env>.+?)_(?:(?P<tier>bench|sota)_)?"
+    r"(?P<algo>ppo|trpo|reinforce|pc_actor_critic|pc_reinforce)_seed(?P<seed>\d+)\.log$")
 STEP_RE = re.compile(r"'training/total_steps':\s*(\d+)")
 EVAL_RE = re.compile(r"'eval/mean_score':\s*(?:np\.float64\()?(-?[\d.eE+]+)")
 
@@ -58,7 +62,8 @@ def collect(results_dir):
             continue
         steps, scores = parse_run(path)
         if scores.size:
-            runs[m["env"]][m["algo"]].append((m["seed"], steps, scores))
+            label = f"{m['tier']}_{m['algo']}" if m["tier"] else m["algo"]
+            runs[m["env"]][label].append((m["seed"], steps, scores))
     return runs
 
 
