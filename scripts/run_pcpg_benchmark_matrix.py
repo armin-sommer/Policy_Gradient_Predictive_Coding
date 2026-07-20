@@ -38,6 +38,11 @@ GROUPS = {
         "halfcheetah_pc_actor_critic_ts01", "halfcheetah_pc_actor_critic_ts03",
         "halfcheetah_pc_actor_critic_ts10",
     ],
+    "adam_tanh_ts": [   # candidate: combine the two positive signals (adam critic + tanh policy)
+        "halfcheetah_pc_actor_critic_adam_tanh_ts03",
+        "halfcheetah_pc_actor_critic_adam_tanh_ts05",
+        "halfcheetah_pc_actor_critic_adam_tanh_ts07",
+    ],
     "baselines": ["halfcheetah_ppo_locked", "halfcheetah_trpo_locked"],
 }
 

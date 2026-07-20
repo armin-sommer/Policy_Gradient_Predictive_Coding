@@ -7,6 +7,15 @@ gates, or selection rules were fixed in advance; seed counts are small (n=1–3)
 and some comparisons are confounded (noted inline). Treat everything here as
 **hypotheses generated from evidence**, not established claims.
 
+> **Superseded in part (2026-07-20) by the systematic benchmark matrix**
+> (`results/benchmark_halfcheetah`; see [PCPG_BENCHMARK_PLAN.md](PCPG_BENCHMARK_PLAN.md)).
+> The "Adam breaks the trust region / SGD+tanh is the fix" narrative in §3–§4 below
+> is **overturned** once the optimizer×activation confound is resolved: **Adam gives
+> the good critic** (`value_explained_var` ≈ +0.6 vs SGD's −0.5…−1.8) and **tanh —
+> not SGD — stabilizes the policy**. Best config is **adam+tanh** (final 649,
+> collapse 1/3); `sgd+tanh` is weak (final 45, collapse 2/3). Read §3–§4 as *what
+> the confounded exploration suggested*, not as the conclusion.
+
 - Date: 2026-07-18
 - Branch: `feature/mujoco-halfcheetah-pcpg`
 - Setup: `pc_actor_critic`, bench tier ([64,64], 256 envs, **1M** steps), Brax/MJX
@@ -203,13 +212,21 @@ itself the core fragility finding**, and it makes n=2–3 untrustworthy.
 
 ## 7. Open questions / next steps
 
-1. **`max_t1` (equilibration)** — untested. Tests whether *incomplete inference*
-   contributes to the residual drift spikes. It **will** cost wall-clock (~linear
-   in `max_t1`), **may** alter learning dynamics / sample efficiency, and is **not**
-   guaranteed to tighten drift — evaluate it with an inference-convergence
-   diagnostic and the compute cost. Use seed 2 (the collapser) only as a
-   *diagnostic*; do **not** select the final hyperparameter on the known-bad seed
-   (overfits to it) — confirm on a fixed/fresh seed set afterward.
+1. **`max_t1` (equilibration)** — negative diagnostic result on seed 2. Same
+   seed, only `max_t1` changed:
+
+   | seed 2 | best | final | `drift_max` |
+   |---|---:|---:|---:|
+   | `max_t1=20` | 410 | −285 | 2.76 |
+   | `max_t1=40` | **71** | **−476** | **14.46** |
+
+   This refutes the narrow "under-equilibration causes the residual spikes"
+   hypothesis for the known-collapsing seed. More inference did not tighten the
+   update; it made the realized policy step much larger, consistent with the
+   interpretation that fuller inference can chase uncapped large targets more
+   completely. Do **not** spend a 3-seed run on `max_t1=40` as a fix. This is still
+   n=1, so it should be recorded as a diagnostic negative result rather than a
+   universal claim about every environment/seed.
 2. **Resolve the optimizer×activation confound** — run the 2×2 so `sgd+tanh` is
    justified, not assumed.
 3. **Critic (hypothesis)** — if `max_t1` doesn't help, the residual *may* be
