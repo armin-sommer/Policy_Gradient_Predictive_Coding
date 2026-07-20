@@ -1,0 +1,39 @@
+# Benchmark (locked): PCPG actor-critic on HalfCheetah bench tier ([64,64], 256 envs, 1M).
+# optimizer x activation cell: adam + tanh
+env:
+  env_name: "halfcheetah"
+  num_envs: 256
+  episode_length: 1000
+
+train:
+  total_steps: 1_000_000
+  rollout_length: 32
+  gamma: 0.99
+  gae_lambda: 0.95
+  optimizer: "adam"
+  learning_rate: 3.0e-4
+  value_learning_rate: 3.0e-4
+  target_scale: 1.0
+  max_t1: 20
+  pc_steps_per_update: 1
+  update_epochs: 2
+  num_minibatches: 4
+  normalize_advantages: true
+  normalize_rewards: true
+  eval_every: 10
+  num_eval_episodes: 10
+
+agent:
+  algorithm: "pc_actor_critic"
+  experiment_name: "pc_actor_critic_adam_tanh"
+  act_fn: "tanh"
+  width: 64
+  depth: 2
+  exp_std: true
+
+wandb:
+  mode: disabled
+  project: "mujoco-pcpg"
+  group: null
+
+seed: 1

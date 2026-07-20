@@ -94,6 +94,14 @@ def _apply_overrides(cfg, overrides):
             value = yaml.safe_load(value)
         except yaml.YAMLError:
             pass
+        # PyYAML parses exponent notation without a decimal point (e.g. "1e-3")
+        # as a string; coerce numeric-looking strings back to float so overrides
+        # like train.learning_rate=1e-3 are numbers, not strings.
+        if isinstance(value, str):
+            try:
+                value = float(value)
+            except ValueError:
+                pass
         cur = cfg
         for k in keys[:-1]:
             cur = cur.setdefault(k, {})
