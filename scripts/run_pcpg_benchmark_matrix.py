@@ -43,6 +43,15 @@ GROUPS = {
         "halfcheetah_pc_actor_critic_adam_tanh_ts05",
         "halfcheetah_pc_actor_critic_adam_tanh_ts07",
     ],
+    # pc_reinforce (no critic -> the PC policy update in isolation)
+    "pcr_mechanism": [
+        "halfcheetah_pc_reinforce_adam_relu", "halfcheetah_pc_reinforce_adam_tanh",
+        "halfcheetah_pc_reinforce_sgd_relu", "halfcheetah_pc_reinforce_sgd_tanh",
+    ],
+    "pcr_target_scale": [
+        "halfcheetah_pc_reinforce_ts01", "halfcheetah_pc_reinforce_ts03",
+        "halfcheetah_pc_reinforce_ts10",
+    ],
     "baselines": ["halfcheetah_ppo_locked", "halfcheetah_trpo_locked"],
 }
 
