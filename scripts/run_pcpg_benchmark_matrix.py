@@ -56,6 +56,9 @@ GROUPS = {
         "halfcheetah_pc_actor_critic_adam_tanh_ts07_5m",
         "halfcheetah_pc_actor_critic_adam_tanh_ts05_5m",
     ],
+    "capacity_5m": [   # capacity/batch matched to PPO/TRPO SOTA ([256,256], 1024 envs)
+        "halfcheetah_pc_actor_critic_adam_tanh_ts07_sota_5m",
+    ],
     "baselines": ["halfcheetah_ppo_locked", "halfcheetah_trpo_locked"],
 }
 
