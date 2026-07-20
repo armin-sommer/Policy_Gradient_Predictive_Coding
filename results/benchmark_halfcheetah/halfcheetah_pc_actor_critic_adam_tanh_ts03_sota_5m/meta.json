@@ -1,0 +1,8 @@
+{
+  "config": "halfcheetah_pc_actor_critic_adam_tanh_ts03_sota_5m",
+  "commit": "7e879f43ab517bdfa3a9aa5050a381d53c964dc1",
+  "total_steps": 5000000,
+  "timestamp": "2026-07-20T21:29:09",
+  "env": "halfcheetah",
+  "algo": "pc_actor_critic"
+}
