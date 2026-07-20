@@ -52,6 +52,10 @@ GROUPS = {
         "halfcheetah_pc_reinforce_ts01", "halfcheetah_pc_reinforce_ts03",
         "halfcheetah_pc_reinforce_ts10",
     ],
+    "candidate_5m": [   # promoted candidate at extended budget (adam+tanh, ts 0.7/0.5)
+        "halfcheetah_pc_actor_critic_adam_tanh_ts07_5m",
+        "halfcheetah_pc_actor_critic_adam_tanh_ts05_5m",
+    ],
     "baselines": ["halfcheetah_ppo_locked", "halfcheetah_trpo_locked"],
 }
 
