@@ -1,0 +1,8 @@
+{
+  "config": "halfcheetah_pc_actor_critic_sgd_relu",
+  "commit": "37642e156e6c352948e4bb4d293b4ff64dac529c",
+  "total_steps": 1000000,
+  "timestamp": "2026-07-20T09:22:32",
+  "env": "halfcheetah",
+  "algo": "pc_actor_critic"
+}
