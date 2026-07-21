@@ -105,7 +105,14 @@ def main():
 
     configs = []
     for c in args.configs:
-        configs += sum(GROUPS.values(), []) if c == "all" else GROUPS.get(c, [c])
+        if c == "all":
+            configs += sum(GROUPS.values(), [])
+        elif c in GROUPS:
+            configs += GROUPS[c]
+        elif "*" in c:                       # glob over generated configs
+            configs += sorted(p.stem for p in CFG_DIR.glob(f"{c}.yaml"))
+        else:
+            configs.append(c)
 
     results_dir = Path(args.results_dir)
     commit = git_commit()
