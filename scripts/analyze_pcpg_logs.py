@@ -41,12 +41,13 @@ TRAIN_KEYS = [
     "training/value_pc_loss", "training/policy_pc_loss", "diag/mu_abs_mean",
     "diag/pretanh_sat_frac", "diag/log_std_mean", "diag/log_std_min",
     "diag/frac_std_at_min", "diag/frac_std_at_max",
+    "diag/policy_kl_max", "diag/policy_kl_mean",
 ]
 ALGO_TOKENS = ["pc_actor_critic", "pc_reinforce", "ppo", "trpo", "reinforce"]
 
 
 def _find(line, key):
-    m = re.search(rf"'{re.escape(key)}':\s*(?:np\.float64\()?({NUM})", line)
+    m = re.search(rf"'{re.escape(key)}':\s*(?:np\.\w+\()?({NUM})", line)
     return float(m.group(1)) if m else None
 
 
@@ -69,6 +70,9 @@ def parse_run(path):
         ev = _find(line, "eval/mean_score")
         if ev is not None:
             evals.append((last_step, ev))
+        final_ev = _find(line, "final_eval/mean_score")
+        if final_ev is not None:
+            evals.append((last_step, final_ev))
         if "TRAINING END" in line and "duration:" in line:
             m = re.search(NUM, line.split("duration:")[-1])
             if m:
@@ -138,6 +142,9 @@ def run_row(path, env, algo, config_name, seed, meta):
         "drift_max": d["diag/policy_drift_max"].get("max"),
         "drift_p95": d["diag/policy_drift_max"].get("p95"),
         "drift_final": d["diag/policy_drift_max"].get("final"),
+        "kl_max": d["diag/policy_kl_max"].get("max"),
+        "kl_p95": d["diag/policy_kl_max"].get("p95"),
+        "kl_final": d["diag/policy_kl_max"].get("final"),
         "mu_target_max": d["diag/mu_target_mag_max"].get("max"),
         "mu_target_p95": d["diag/mu_target_mag_max"].get("p95"),
         "value_ev_mean": d["diag/value_explained_var"].get("mean"),
@@ -226,7 +233,7 @@ def write_summary_md(agg, path):
     return "\n".join(out)
 
 
-def _mean_curve(runs, key):
+def _mean_curve(runs):
     """Align seeds to the shortest series; return (steps, mean)."""
     series = [runs_i for runs_i in runs if runs_i]
     if not series:
@@ -251,26 +258,40 @@ def plot(rows, results_dir):
 
     # learning curves (eval return)
     fig, ax = plt.subplots(figsize=(7, 4.5))
+    plotted = 0
     for cfg, rs in sorted(by_cfg.items()):
-        steps, mean = _mean_curve([r["_evals"] for r in rs], "evals")
+        # Draw faint individual seed curves so a config with uneven eval counts
+        # still leaves visible evidence, then overlay the common-prefix mean.
+        for r in rs:
+            if not r["_evals"]:
+                continue
+            s = np.array([x[0] for x in r["_evals"]], float)
+            v = np.array([x[1] for x in r["_evals"]], float)
+            ax.plot(s, v, alpha=0.22, linewidth=0.9)
+            plotted += 1
+        steps, mean = _mean_curve([r["_evals"] for r in rs])
         if steps is not None:
             ax.plot(steps, mean, label=f"{cfg} (n={len(rs)})", linewidth=2)
+            plotted += 1
     ax.set(title="eval return vs steps", xlabel="env steps", ylabel="eval/mean_score")
     ax.grid(alpha=0.3); ax.legend(fontsize=7); fig.tight_layout()
+    if plotted == 0:
+        ax.text(0.5, 0.5, "No eval points parsed from logs",
+                transform=ax.transAxes, ha="center", va="center")
+        print("warning: no eval points parsed; learning_curve.png will be empty")
     fig.savefig(results_dir / "learning_curve.png", dpi=130); plt.close(fig)
 
     # diagnostic panels
-    panels = ["diag/policy_drift_max", "diag/mu_target_mag_max",
+    panels = ["diag/policy_kl_max", "diag/policy_drift_max", "diag/mu_target_mag_max",
               "diag/value_explained_var", "diag/pretanh_sat_frac", "diag/log_std_mean"]
     fig, axes = plt.subplots(2, 3, figsize=(14, 8))
     for ax, key in zip(axes.flat, panels):
         for cfg, rs in sorted(by_cfg.items()):
-            steps, mean = _mean_curve([r["_train"][key] for r in rs], key)
+            steps, mean = _mean_curve([r["_train"][key] for r in rs])
             if steps is not None:
                 ax.plot(steps, mean, label=cfg, linewidth=1.5)
         ax.set(title=key, xlabel="env steps"); ax.grid(alpha=0.3)
     axes.flat[0].legend(fontsize=6)
-    axes.flat[-1].axis("off")
     fig.tight_layout()
     fig.savefig(results_dir / "diagnostic_plots.png", dpi=120); plt.close(fig)
 

@@ -319,9 +319,15 @@ def main(_):
             params_post = pcn_forward(policy_model, probe_obs)
             loc_pre, scale_pre, _ = split_gaussian_params(
                 params_pre, action_size, exp_std=Config.exp_std)
-            loc_post, _, log_std_post = split_gaussian_params(
+            loc_post, scale_post, log_std_post = split_gaussian_params(
                 params_post, action_size, exp_std=Config.exp_std)
             drift = jnp.abs(loc_post - loc_pre) / scale_pre
+            # per-update policy KL D_KL(pi_old || pi_new): tanh is a bijection, so
+            # this equals the squashed-action policy KL. Bounded KL across training
+            # is the trust-region property the "PC update = TRPO" claim predicts.
+            policy_kl = (jnp.log(scale_post / scale_pre)
+                         + (scale_pre ** 2 + (loc_pre - loc_post) ** 2)
+                         / (2.0 * scale_post ** 2) - 0.5).sum(-1)
             probe_targets = gaussian_pc_targets(
                 params_pre, jnp.asarray(pre_tanh_flat[:n_probe]),
                 jnp.asarray(advantages[:n_probe]), action_size,
@@ -336,6 +342,8 @@ def main(_):
                 'diag/mu_abs_mean': float(jnp.abs(loc_post).mean()),
                 'diag/policy_drift_mean': float(drift.mean()),
                 'diag/policy_drift_max': float(drift.max()),
+                'diag/policy_kl_mean': float(policy_kl.mean()),
+                'diag/policy_kl_max': float(policy_kl.max()),
                 'diag/mu_target_mag_mean': float(mu_target_mag.mean()),
                 'diag/mu_target_mag_max': float(mu_target_mag.max()),
                 'diag/pretanh_sat_frac': float((np.abs(pre_tanh_flat) > 2.0).mean()),
