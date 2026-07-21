@@ -1,0 +1,31 @@
+env:
+  env_name: halfcheetah
+  num_envs: 256
+  episode_length: 1000
+train:
+  total_steps: 1000000
+  rollout_length: 256
+  gamma: 0.99
+  learning_rate: 0.03
+  target_scale: 1.0
+  max_t1: 20
+  pc_steps_per_update: 1
+  update_epochs: 2
+  num_minibatches: 4
+  normalize_advantages: true
+  normalize_rewards: true
+  eval_every: 2
+  num_eval_episodes: 10
+  optimizer: sgd
+agent:
+  algorithm: pc_reinforce
+  experiment_name: pc_reinforce_sgd_tanh_ts10_bench_lr003_mt20
+  width: 64
+  depth: 2
+  exp_std: true
+  act_fn: tanh
+wandb:
+  mode: disabled
+  project: mujoco-pcpg
+  group: null
+seed: 1
