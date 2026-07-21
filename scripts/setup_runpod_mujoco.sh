@@ -10,7 +10,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 
 # 1. System libs MuJoCo links against (needed to import, even headless).
-apt-get update && apt-get install -y libgl1 libglib2.0-0
+apt-get update && apt-get install -y libgl1 libglib2.0-0 tmux
 
 # 2. JAX (pinned 0.4.38 for the backprop pmap), Brax/mjx env, YAML config parser.
 #    --ignore-installed blinker: the OS-installed blinker has no RECORD file and
