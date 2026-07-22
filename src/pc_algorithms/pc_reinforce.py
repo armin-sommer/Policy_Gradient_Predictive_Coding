@@ -62,6 +62,12 @@ class Config:
     max_t1 = 20
     normalize_rewards = False
     exp_std = True
+    # State-independent std: match the SOTA PPO/TRPO policy (a single global
+    # log_std vector, init 0 -> std=1), instead of the network emitting a
+    # per-state log_std. Leaves the mean/PC pathway untouched; only changes how
+    # sigma is parameterized + updated (global, batch-averaged score step). This
+    # removes the per-state sigma collapse that detonates the 1/sigma^2 target.
+    state_indep_std = False
     # 'adam' or 'sgd'. Innocenti et al. (2305.18188) derive PC's trust-region
     # property for plain GD on the equilibrated energy; Adam re-preconditions it.
     optimizer = 'adam'
@@ -70,6 +76,14 @@ class Config:
     depth = 2
     act_fn = 'relu'
     policy_init_logit_bias = None
+
+
+def _global_norm(tree):
+    """Global L2 norm from jpc's per-layer grad-norm pytree: sqrt(sum ||g_l||^2)."""
+    leaves = jax.tree_util.tree_leaves(tree)
+    if not leaves:
+        return jnp.array(0.0)
+    return jnp.sqrt(sum(jnp.sum(jnp.square(l)) for l in leaves))
 
 
 def _set_final_layer(model, logit_bias):
@@ -151,6 +165,19 @@ def main(_):
         activities = jpc.init_activities_with_ffwd(model=model, input=obs)
         return activities[-1]
 
+    # State-independent std: a single global log_std vector (init 0 -> std=1 with
+    # exp_std), shared across states like the SOTA PPO/TRPO policy. The network
+    # still emits 2*action_size, but its std head is frozen (PC-targeted to its
+    # own output) and ignored; behavior uses this global vector instead.
+    state_indep = continuous and Config.state_indep_std
+    policy_log_std = jnp.zeros((action_size,), dtype=jnp.float32)
+
+    def _with_global_std(net_out):
+        """Replace the std half of a [.., 2*action_size] output with global std."""
+        mean = net_out[..., :action_size]
+        return jnp.concatenate(
+            [mean, jnp.broadcast_to(policy_log_std, mean.shape)], axis=-1)
+
     def _flat_obs(obs, update=True):
         raw = np.asarray(obs).reshape(obs.shape[0], -1).astype(np.float32)
         try:
@@ -185,6 +212,8 @@ def main(_):
         for _ in range(Config.unroll_length):
             obs = _flat_obs(env_state.obs)
             params = policy_forward(model, jnp.asarray(obs))
+            if state_indep:
+                params = _with_global_std(params)
             key, key_act = jr.split(key)
             if continuous:
                 actions, pre_tanh = sample_gaussian_action(
@@ -229,6 +258,14 @@ def main(_):
         n_probe = min(2048, batch_size)
         probe_obs = jnp.asarray(observations[:n_probe])
         params_pre = policy_forward(model, probe_obs) if continuous else None
+        if state_indep:
+            params_pre = _with_global_std(params_pre)  # pre-update global std
+
+        # accumulate the PC policy-gradient norm across every weight update this
+        # step (exploding-gradient diagnostic; max is the spike to watch/clip).
+        pgn_max = jnp.array(0.0)
+        pgn_sum = jnp.array(0.0)
+        pgn_cnt = 0
 
         for _ in range(Config.update_epochs):
             key, key_perm = jr.split(key)
@@ -238,7 +275,26 @@ def main(_):
                 mb_adv = jnp.asarray(advantages[mb_idx])
                 # recompute targets from the current policy (PPO-style reuse)
                 params_mb = policy_forward(model, mb_obs)
-                if continuous:
+                if continuous and state_indep:
+                    mb_pre_tanh = jnp.asarray(pre_tanh_flat[mb_idx])
+                    params_mb_std = _with_global_std(params_mb)
+                    # mean target uses the global sigma; std head is frozen by
+                    # targeting its own current output (zero error there).
+                    targets = gaussian_pc_targets(
+                        params_mb_std, mb_pre_tanh, mb_adv,
+                        action_size, Config.target_scale, exp_std=Config.exp_std)
+                    targets = targets.at[:, action_size:].set(
+                        params_mb[:, action_size:])
+                    # global log_std <- batch-averaged Gaussian score on log_std,
+                    # the same signal PPO's state-independent log_std receives.
+                    loc_mb, scale_mb, _ = split_gaussian_params(
+                        params_mb_std, action_size, exp_std=Config.exp_std)
+                    z_mb = (mb_pre_tanh - loc_mb) / scale_mb
+                    dstd = Config.target_scale * (
+                        mb_adv[:, None] * (jnp.square(z_mb) - 1.0)).mean(0)
+                    policy_log_std = jnp.clip(
+                        policy_log_std + dstd, LOG_STD_MIN, LOG_STD_MAX)
+                elif continuous:
                     targets = gaussian_pc_targets(
                         params_mb, jnp.asarray(pre_tanh_flat[mb_idx]), mb_adv,
                         action_size, Config.target_scale, exp_std=Config.exp_std)
@@ -254,8 +310,13 @@ def main(_):
                         output=targets,
                         input=mb_obs,
                         max_t1=Config.max_t1,
+                        grad_norms=True,
                     )
                     model, opt_state = result["model"], result["opt_state"]
+                    gnorm = _global_norm(result["model_grad_norms"])
+                    pgn_max = jnp.maximum(pgn_max, gnorm)
+                    pgn_sum = pgn_sum + gnorm
+                    pgn_cnt += 1
 
         global_step += env_step_per_training_step
         metrics = {
@@ -266,9 +327,13 @@ def main(_):
             'training/pc_loss': float(result['loss']),
             'training/mean_reward': float(rewards.mean()),
             'training/mean_advantage_abs': float(np.abs(advantages).mean()),
+            'diag/policy_grad_norm_max': float(pgn_max),
+            'diag/policy_grad_norm_mean': float(pgn_sum / max(pgn_cnt, 1)),
         }
         if continuous:
             params_post = policy_forward(model, probe_obs)
+            if state_indep:
+                params_post = _with_global_std(params_post)  # post-update global std
             loc_pre, scale_pre, _ = split_gaussian_params(
                 params_pre, action_size, exp_std=Config.exp_std)
             loc_post, scale_post, log_std_post = split_gaussian_params(

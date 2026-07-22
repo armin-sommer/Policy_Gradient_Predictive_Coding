@@ -27,6 +27,8 @@ def main():
     ap.add_argument("--ts", type=float, required=True)
     ap.add_argument("--lr", type=float, default=3e-4)
     ap.add_argument("--max-t1", type=int, default=None, help="PC inference steps (default: tier's)")
+    ap.add_argument("--state-indep-std", action="store_true",
+                    help="global (state-independent) log_std, like SOTA PPO/TRPO")
     a = ap.parse_args()
 
     base = ROOT / "configs" / f"mujoco_halfcheetah_{a.algo}_{a.tier}.yaml"
@@ -37,11 +39,14 @@ def main():
     c["agent"]["act_fn"] = a.act
     if a.max_t1 is not None:
         c["train"]["max_t1"] = a.max_t1
+    if a.state_indep_std:
+        c["agent"]["state_indep_std"] = True
 
     ts = "ts" + str(a.ts).replace(".", "").ljust(2, "0")[:2]        # 0.5 -> ts05
     lr = "" if abs(a.lr - 3e-4) < 1e-12 else "_lr" + f"{a.lr:g}".replace(".", "")
     mt = "" if a.max_t1 is None else f"_mt{a.max_t1}"
-    name = f"halfcheetah_{a.algo}_{a.opt}_{a.act}_{ts}_{a.tier}{lr}{mt}"
+    sistd = "_stdglobal" if a.state_indep_std else ""
+    name = f"halfcheetah_{a.algo}_{a.opt}_{a.act}_{ts}_{a.tier}{lr}{mt}{sistd}"
     c["agent"]["experiment_name"] = name.replace("halfcheetah_", "")
 
     out = ROOT / "configs" / "benchmark" / f"{name}.yaml"

@@ -42,6 +42,7 @@ KEY_MAP = {
     ("agent", "width"): "width",
     ("agent", "depth"): "depth",
     ("agent", "exp_std"): "exp_std",
+    ("agent", "state_indep_std"): "state_indep_std",
     ("train", "rollout_length"): "unroll_length",
     ("train", "batch_size"): "batch_size",
     ("train", "num_minibatches"): "num_minibatches",
