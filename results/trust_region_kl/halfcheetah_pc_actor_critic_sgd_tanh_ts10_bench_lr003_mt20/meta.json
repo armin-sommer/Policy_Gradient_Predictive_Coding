@@ -1,0 +1,8 @@
+{
+  "config": "halfcheetah_pc_actor_critic_sgd_tanh_ts10_bench_lr003_mt20",
+  "commit": "9f2fbde3d284a34e11a4c479b19f5a223d8842d3",
+  "total_steps": 1000000,
+  "timestamp": "2026-07-21T18:48:36",
+  "env": "halfcheetah",
+  "algo": "pc_actor_critic"
+}
