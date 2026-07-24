@@ -71,6 +71,10 @@ class Config:
     # 'adam' or 'sgd'. Innocenti et al. (2305.18188) derive PC's trust-region
     # property for plain GD on the equilibrated energy; Adam re-preconditions it.
     optimizer = 'adam'
+    # Optional global-norm clip on the PC policy gradient (None = off). Applied
+    # before the optimizer step; the logged policy_grad_norm_max is the PRE-clip
+    # norm, so you see the true spike and how often it exceeds the clip.
+    max_grad_norm = None
 
     width = 32
     depth = 2
@@ -158,6 +162,9 @@ def main(_):
         optim = optax.sgd(Config.learning_rate)
     else:
         optim = optax.adam(Config.learning_rate)
+    if Config.max_grad_norm is not None:
+        optim = optax.chain(
+            optax.clip_by_global_norm(float(Config.max_grad_norm)), optim)
     opt_state = optim.init((eqx.filter(model, eqx.is_array), None))
 
     @eqx.filter_jit

@@ -29,6 +29,8 @@ def main():
     ap.add_argument("--max-t1", type=int, default=None, help="PC inference steps (default: tier's)")
     ap.add_argument("--state-indep-std", action="store_true",
                     help="global (state-independent) log_std, like SOTA PPO/TRPO")
+    ap.add_argument("--max-grad-norm", type=float, default=None,
+                    help="global-norm clip on the PC policy gradient (default: off)")
     a = ap.parse_args()
 
     base = ROOT / "configs" / f"mujoco_halfcheetah_{a.algo}_{a.tier}.yaml"
@@ -41,12 +43,15 @@ def main():
         c["train"]["max_t1"] = a.max_t1
     if a.state_indep_std:
         c["agent"]["state_indep_std"] = True
+    if a.max_grad_norm is not None:
+        c["train"]["max_grad_norm"] = a.max_grad_norm
 
     ts = "ts" + str(a.ts).replace(".", "").ljust(2, "0")[:2]        # 0.5 -> ts05
     lr = "" if abs(a.lr - 3e-4) < 1e-12 else "_lr" + f"{a.lr:g}".replace(".", "")
     mt = "" if a.max_t1 is None else f"_mt{a.max_t1}"
     sistd = "_stdglobal" if a.state_indep_std else ""
-    name = f"halfcheetah_{a.algo}_{a.opt}_{a.act}_{ts}_{a.tier}{lr}{mt}{sistd}"
+    clip = "" if a.max_grad_norm is None else "_clip" + f"{a.max_grad_norm:g}".replace(".", "")
+    name = f"halfcheetah_{a.algo}_{a.opt}_{a.act}_{ts}_{a.tier}{lr}{mt}{sistd}{clip}"
     c["agent"]["experiment_name"] = name.replace("halfcheetah_", "")
 
     out = ROOT / "configs" / "benchmark" / f"{name}.yaml"
