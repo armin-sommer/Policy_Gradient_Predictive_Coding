@@ -37,6 +37,8 @@ def main():
                     help="make --target-clip relative: |loc_target-mu| <= clip*sigma")
     ap.add_argument("--log-std-min", type=float, default=None,
                     help="raise the log_std floor (e.g. -1 -> sigma_min 0.37)")
+    ap.add_argument("--natural-target", action="store_true",
+                    help="natural-gradient target (drop the 1/sigma^2 amplifier)")
     a = ap.parse_args()
 
     base = ROOT / "configs" / f"mujoco_halfcheetah_{a.algo}_{a.tier}.yaml"
@@ -56,6 +58,8 @@ def main():
         c["train"]["target_clip_rel"] = a.target_clip_rel
     if a.log_std_min is not None:
         c["agent"]["log_std_min"] = a.log_std_min
+    if a.natural_target:
+        c["train"]["natural_target"] = True
 
     ts = "ts" + str(a.ts).replace(".", "").ljust(2, "0")[:2]        # 0.5 -> ts05
     lr = "" if abs(a.lr - 3e-4) < 1e-12 else "_lr" + f"{a.lr:g}".replace(".", "")
@@ -65,7 +69,8 @@ def main():
     tclip = "" if a.target_clip is None else ("_tclip" + ("rel" if a.target_clip_rel else "")
                                               + f"{a.target_clip:g}".replace(".", ""))
     smin = "" if a.log_std_min is None else "_smin" + f"{a.log_std_min:g}".replace(".", "").replace("-", "m")
-    name = f"halfcheetah_{a.algo}_{a.opt}_{a.act}_{ts}_{a.tier}{lr}{mt}{sistd}{clip}{tclip}{smin}"
+    nat = "_nat" if a.natural_target else ""
+    name = f"halfcheetah_{a.algo}_{a.opt}_{a.act}_{ts}_{a.tier}{lr}{mt}{sistd}{clip}{tclip}{smin}{nat}"
     c["agent"]["experiment_name"] = name.replace("halfcheetah_", "")
 
     out = ROOT / "configs" / "benchmark" / f"{name}.yaml"

@@ -46,6 +46,7 @@ KEY_MAP = {
     ("agent", "log_std_min"): "log_std_min",
     ("train", "target_clip"): "target_clip",
     ("train", "target_clip_rel"): "target_clip_rel",
+    ("train", "natural_target"): "natural_target",
     ("train", "rollout_length"): "unroll_length",
     ("train", "batch_size"): "batch_size",
     ("train", "num_minibatches"): "num_minibatches",

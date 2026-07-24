@@ -75,8 +75,13 @@ class Config:
     # before the optimizer step; the logged policy_grad_norm_max is the PRE-clip
     # norm, so you see the true spike and how often it exceeds the clip.
     max_grad_norm = None
-    # Output-space trust region: cap the mean-target offset ts*A*(z-mu)/sigma^2
-    # (None = off). Optimizer-agnostic; caps the 1/sigma^2 blow-up at the source.
+    # Natural-gradient target: Fisher-precondition the target so the mean offset
+    # is ts*A*(z-mu) (no 1/sigma^2) instead of ts*A*(z-mu)/sigma^2. This is the
+    # target the "PC update = natural gradient" claim implies; removes the
+    # amplifier at the source. False = Euclidean (current). See gaussian_pc_targets.
+    natural_target = False
+    # Output-space trust region: cap the mean-target offset (None = off).
+    # Optimizer-agnostic; composes on top of natural_target.
     # target_clip_rel=True makes the cap relative (|loc_target-mu| <= clip*sigma).
     target_clip = None
     target_clip_rel = False
@@ -302,7 +307,8 @@ def main(_):
                         params_mb_std, mb_pre_tanh, mb_adv,
                         action_size, Config.target_scale, exp_std=Config.exp_std,
                         target_clip=Config.target_clip,
-                        target_clip_rel=Config.target_clip_rel)
+                        target_clip_rel=Config.target_clip_rel,
+                        natural_target=Config.natural_target)
                     targets = targets.at[:, action_size:].set(
                         params_mb[:, action_size:])
                     # global log_std <- batch-averaged Gaussian score on log_std,
@@ -312,6 +318,8 @@ def main(_):
                     z_mb = (mb_pre_tanh - loc_mb) / scale_mb
                     dstd = Config.target_scale * (
                         mb_adv[:, None] * (jnp.square(z_mb) - 1.0)).mean(0)
+                    if Config.natural_target:
+                        dstd = dstd * 0.5  # F^-1 on log_std channel
                     policy_log_std = jnp.clip(
                         policy_log_std + dstd, gpol.LOG_STD_MIN, LOG_STD_MAX)
                 elif continuous:
@@ -319,7 +327,8 @@ def main(_):
                         params_mb, jnp.asarray(pre_tanh_flat[mb_idx]), mb_adv,
                         action_size, Config.target_scale, exp_std=Config.exp_std,
                         target_clip=Config.target_clip,
-                        target_clip_rel=Config.target_clip_rel)
+                        target_clip_rel=Config.target_clip_rel,
+                        natural_target=Config.natural_target)
                 else:
                     targets = discrete_pc_targets(
                         params_mb, jnp.asarray(actions_flat[mb_idx]).astype(jnp.int32),
@@ -370,7 +379,8 @@ def main(_):
             probe_targets = gaussian_pc_targets(
                 params_pre, jnp.asarray(pre_tanh_flat[:n_probe]),
                 jnp.asarray(advantages[:n_probe]), action_size,
-                Config.target_scale, exp_std=Config.exp_std)
+                Config.target_scale, exp_std=Config.exp_std,
+                natural_target=Config.natural_target)  # pre-clip, actual target family
             mu_target_mag = jnp.abs(
                 probe_targets[:, :action_size] - loc_pre)
             metrics.update({

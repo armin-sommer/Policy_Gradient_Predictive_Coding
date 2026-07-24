@@ -49,12 +49,24 @@ def gaussian_pc_targets(
     min_std=0.001,
     target_clip=None,
     target_clip_rel=False,
+    natural_target=False,
 ):
     """PC targets for the squashed-Gaussian policy.
 
-    `target_clip` bounds the *mean-target offset* `ts*A*(z-mu)/sigma^2` per
-    coordinate -- an output-space trust region that caps the 1/sigma^2 blow-up
-    directly, and (unlike a weight-gradient clip) is optimizer-agnostic.
+    Two independent, composable knobs (both default off = current behavior):
+
+    `natural_target` selects which gradient the target encodes:
+      - False (Euclidean, default): offset = ts*A*(z-mu)/sigma^2 in the mean and
+        ts*A*(z_score^2 - 1) in log_std. The 1/sigma^2 factor is the amplifier
+        that drives the instability.
+      - True (natural / Fisher-preconditioned): multiply each channel by the
+        inverse Gaussian Fisher (F_mu = 1/sigma^2 -> mean offset becomes
+        ts*A*(z-mu), no amplifier; F_logsigma = 2 -> log_std offset halved). This
+        is the target the "PC update = natural gradient" claim implies, and it
+        removes the blow-up at the source rather than clipping it.
+
+    `target_clip` then bounds the (post-natural) mean offset per coordinate --
+    an output-space trust region, optimizer-agnostic:
       - target_clip_rel=False: absolute cap, |loc_target - mu| <= target_clip.
       - target_clip_rel=True:  relative cap, |loc_target - mu| <= target_clip*sigma.
     """
@@ -62,14 +74,17 @@ def gaussian_pc_targets(
         params, action_dim, exp_std, min_std)
     z_score = (pre_tanh - loc) / scale
     adv = advantages[:, None]
-    mu_offset = target_scale * adv * z_score / scale
+    mu_offset = target_scale * adv * z_score / scale            # Euclidean d/dmu
+    log_scale_offset = target_scale * adv * (jnp.square(z_score) - 1.0)  # d/dlogsigma
+    if natural_target:
+        mu_offset = mu_offset * jnp.square(scale)   # F^-1: -> ts*A*(z-mu)
+        log_scale_offset = log_scale_offset * 0.5   # F^-1: 1/2
     if target_clip is not None:
         cap = target_clip * scale if target_clip_rel else target_clip
         mu_offset = jnp.clip(mu_offset, -cap, cap)
     loc_target = loc + mu_offset
     log_scale_target = jnp.clip(
-        log_scale + target_scale * adv * (jnp.square(z_score) - 1.0),
-        LOG_STD_MIN, LOG_STD_MAX)
+        log_scale + log_scale_offset, LOG_STD_MIN, LOG_STD_MAX)
     return jnp.concatenate([loc_target, log_scale_target], axis=-1)
 
 
