@@ -31,6 +31,12 @@ def main():
                     help="global (state-independent) log_std, like SOTA PPO/TRPO")
     ap.add_argument("--max-grad-norm", type=float, default=None,
                     help="global-norm clip on the PC policy gradient (default: off)")
+    ap.add_argument("--target-clip", type=float, default=None,
+                    help="cap on the mean-target offset (output-space trust region)")
+    ap.add_argument("--target-clip-rel", action="store_true",
+                    help="make --target-clip relative: |loc_target-mu| <= clip*sigma")
+    ap.add_argument("--log-std-min", type=float, default=None,
+                    help="raise the log_std floor (e.g. -1 -> sigma_min 0.37)")
     a = ap.parse_args()
 
     base = ROOT / "configs" / f"mujoco_halfcheetah_{a.algo}_{a.tier}.yaml"
@@ -45,13 +51,21 @@ def main():
         c["agent"]["state_indep_std"] = True
     if a.max_grad_norm is not None:
         c["train"]["max_grad_norm"] = a.max_grad_norm
+    if a.target_clip is not None:
+        c["train"]["target_clip"] = a.target_clip
+        c["train"]["target_clip_rel"] = a.target_clip_rel
+    if a.log_std_min is not None:
+        c["agent"]["log_std_min"] = a.log_std_min
 
     ts = "ts" + str(a.ts).replace(".", "").ljust(2, "0")[:2]        # 0.5 -> ts05
     lr = "" if abs(a.lr - 3e-4) < 1e-12 else "_lr" + f"{a.lr:g}".replace(".", "")
     mt = "" if a.max_t1 is None else f"_mt{a.max_t1}"
     sistd = "_stdglobal" if a.state_indep_std else ""
     clip = "" if a.max_grad_norm is None else "_clip" + f"{a.max_grad_norm:g}".replace(".", "")
-    name = f"halfcheetah_{a.algo}_{a.opt}_{a.act}_{ts}_{a.tier}{lr}{mt}{sistd}{clip}"
+    tclip = "" if a.target_clip is None else ("_tclip" + ("rel" if a.target_clip_rel else "")
+                                              + f"{a.target_clip:g}".replace(".", ""))
+    smin = "" if a.log_std_min is None else "_smin" + f"{a.log_std_min:g}".replace(".", "").replace("-", "m")
+    name = f"halfcheetah_{a.algo}_{a.opt}_{a.act}_{ts}_{a.tier}{lr}{mt}{sistd}{clip}{tclip}{smin}"
     c["agent"]["experiment_name"] = name.replace("halfcheetah_", "")
 
     out = ROOT / "configs" / "benchmark" / f"{name}.yaml"

@@ -47,12 +47,26 @@ def gaussian_pc_targets(
     target_scale,
     exp_std=True,
     min_std=0.001,
+    target_clip=None,
+    target_clip_rel=False,
 ):
+    """PC targets for the squashed-Gaussian policy.
+
+    `target_clip` bounds the *mean-target offset* `ts*A*(z-mu)/sigma^2` per
+    coordinate -- an output-space trust region that caps the 1/sigma^2 blow-up
+    directly, and (unlike a weight-gradient clip) is optimizer-agnostic.
+      - target_clip_rel=False: absolute cap, |loc_target - mu| <= target_clip.
+      - target_clip_rel=True:  relative cap, |loc_target - mu| <= target_clip*sigma.
+    """
     loc, scale, log_scale = split_gaussian_params(
         params, action_dim, exp_std, min_std)
     z_score = (pre_tanh - loc) / scale
     adv = advantages[:, None]
-    loc_target = loc + target_scale * adv * z_score / scale
+    mu_offset = target_scale * adv * z_score / scale
+    if target_clip is not None:
+        cap = target_clip * scale if target_clip_rel else target_clip
+        mu_offset = jnp.clip(mu_offset, -cap, cap)
+    loc_target = loc + mu_offset
     log_scale_target = jnp.clip(
         log_scale + target_scale * adv * (jnp.square(z_score) - 1.0),
         LOG_STD_MIN, LOG_STD_MAX)

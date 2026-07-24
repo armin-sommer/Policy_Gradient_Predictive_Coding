@@ -15,9 +15,9 @@ import jpc
 
 from env import make_vec_env
 from utils.utils import EnvConfig
+from pc_algorithms import gaussian_policy as gpol
 from pc_algorithms.gaussian_policy import (
     LOG_STD_MAX,
-    LOG_STD_MIN,
     discrete_pc_targets,
     gaussian_pc_targets,
     sample_gaussian_action,
@@ -75,6 +75,14 @@ class Config:
     # before the optimizer step; the logged policy_grad_norm_max is the PRE-clip
     # norm, so you see the true spike and how often it exceeds the clip.
     max_grad_norm = None
+    # Output-space trust region: cap the mean-target offset ts*A*(z-mu)/sigma^2
+    # (None = off). Optimizer-agnostic; caps the 1/sigma^2 blow-up at the source.
+    # target_clip_rel=True makes the cap relative (|loc_target-mu| <= clip*sigma).
+    target_clip = None
+    target_clip_rel = False
+    # Raise the log_std floor to tame the 1/sigma^2 amplifier (None = default -2;
+    # e.g. -1 -> sigma_min 0.37, so 1/sigma^2 caps at ~7 instead of ~55).
+    log_std_min = None
 
     width = 32
     depth = 2
@@ -120,6 +128,9 @@ def main(_):
     for k, v in vars(Config).items():
         if not k.startswith('__'):
             logging.info(f"|{k}:  {v}|")
+
+    if Config.log_std_min is not None:
+        gpol.LOG_STD_MIN = float(Config.log_std_min)  # raise the sigma floor
 
     random.seed(Config.seed)
     np.random.seed(Config.seed)
@@ -289,7 +300,9 @@ def main(_):
                     # targeting its own current output (zero error there).
                     targets = gaussian_pc_targets(
                         params_mb_std, mb_pre_tanh, mb_adv,
-                        action_size, Config.target_scale, exp_std=Config.exp_std)
+                        action_size, Config.target_scale, exp_std=Config.exp_std,
+                        target_clip=Config.target_clip,
+                        target_clip_rel=Config.target_clip_rel)
                     targets = targets.at[:, action_size:].set(
                         params_mb[:, action_size:])
                     # global log_std <- batch-averaged Gaussian score on log_std,
@@ -300,11 +313,13 @@ def main(_):
                     dstd = Config.target_scale * (
                         mb_adv[:, None] * (jnp.square(z_mb) - 1.0)).mean(0)
                     policy_log_std = jnp.clip(
-                        policy_log_std + dstd, LOG_STD_MIN, LOG_STD_MAX)
+                        policy_log_std + dstd, gpol.LOG_STD_MIN, LOG_STD_MAX)
                 elif continuous:
                     targets = gaussian_pc_targets(
                         params_mb, jnp.asarray(pre_tanh_flat[mb_idx]), mb_adv,
-                        action_size, Config.target_scale, exp_std=Config.exp_std)
+                        action_size, Config.target_scale, exp_std=Config.exp_std,
+                        target_clip=Config.target_clip,
+                        target_clip_rel=Config.target_clip_rel)
                 else:
                     targets = discrete_pc_targets(
                         params_mb, jnp.asarray(actions_flat[mb_idx]).astype(jnp.int32),
@@ -361,7 +376,7 @@ def main(_):
             metrics.update({
                 'diag/log_std_mean': float(log_std_post.mean()),
                 'diag/log_std_min': float(log_std_post.min()),
-                'diag/frac_std_at_min': float((log_std_post <= LOG_STD_MIN + 1e-3).mean()),
+                'diag/frac_std_at_min': float((log_std_post <= gpol.LOG_STD_MIN + 1e-3).mean()),
                 'diag/frac_std_at_max': float((log_std_post >= LOG_STD_MAX - 1e-3).mean()),
                 'diag/mu_abs_mean': float(jnp.abs(loc_post).mean()),
                 'diag/policy_drift_mean': float(drift.mean()),
