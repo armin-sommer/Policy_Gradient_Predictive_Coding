@@ -1,0 +1,33 @@
+env:
+  env_name: halfcheetah
+  num_envs: 1024
+  episode_length: 1000
+train:
+  total_steps: 5000000
+  rollout_length: 32
+  gamma: 0.99
+  gae_lambda: 0.95
+  optimizer: adam
+  learning_rate: 0.0003
+  value_learning_rate: 0.0003
+  target_scale: 0.4
+  max_t1: 20
+  pc_steps_per_update: 1
+  update_epochs: 2
+  num_minibatches: 4
+  normalize_advantages: true
+  normalize_rewards: true
+  eval_every: 10
+  num_eval_episodes: 10
+agent:
+  algorithm: pc_actor_critic
+  experiment_name: pc_actor_critic_adam_tanh_ts04_sota_5m
+  act_fn: tanh
+  width: 256
+  depth: 2
+  exp_std: true
+wandb:
+  mode: disabled
+  project: mujoco-pcpg
+  group: null
+seed: 1

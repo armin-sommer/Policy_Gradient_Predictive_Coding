@@ -1,0 +1,53 @@
+|param: value|
+|experiment_name:  pc_reinforce_sgd_relu_ts05_sota_lr003|
+|seed:  3|
+|write_logs_to_file:  False|
+|save_model:  False|
+|env_name:  halfcheetah|
+|num_envs:  512|
+|num_train_levels:  200|
+|distribution_mode:  easy|
+|arm_means:  (1.0, 0.9)|
+|deterministic_rewards:  True|
+|episode_length:  1000|
+|eval_env:  True|
+|num_eval_episodes:  10|
+|eval_every:  4|
+|total_timesteps:  5000000|
+|unroll_length:  256|
+|gamma:  0.99|
+|learning_rate:  0.03|
+|target_scale:  0.5|
+|pc_steps_per_update:  1|
+|update_epochs:  2|
+|num_minibatches:  4|
+|normalize_advantages:  True|
+|max_t1:  20|
+|normalize_rewards:  True|
+|exp_std:  True|
+|optimizer:  sgd|
+|width:  256|
+|depth:  2|
+|act_fn:  relu|
+|policy_init_logit_bias:  None|
+|checkpoint_dir:  /workspace/PCPG/outputs/checkpoints|
+INFO:2026-07-21 12:43:14,583:jax._src.xla_bridge:924: Unable to initialize backend 'rocm': module 'jaxlib.xla_extension' has no attribute 'GpuAllocatorConfig'
+Unable to initialize backend 'rocm': module 'jaxlib.xla_extension' has no attribute 'GpuAllocatorConfig'
+INFO:2026-07-21 12:43:14,587:jax._src.xla_bridge:924: Unable to initialize backend 'tpu': INTERNAL: Failed to open libtpu.so: libtpu.so: cannot open shared object file: No such file or directory
+Unable to initialize backend 'tpu': INTERNAL: Failed to open libtpu.so: libtpu.so: cannot open shared object file: No such file or directory
+E0721 12:43:15.435665  104804 ptx_compiler_helpers.cc:87] *** WARNING *** Invoking ptxas with version 12.4.131, which corresponds to a CUDA version <=12.6.2. CUDA versions 12.x.y up to and including 12.6.2 miscompile certain edge cases around clamping.
+Please upgrade to CUDA 12.6.3 or newer.
+Using JAX default device: cuda:0.
+/usr/local/lib/python3.11/dist-packages/brax/io/mjcf.py:480: UserWarning: Brax System, piplines and environments are not actively being maintained. Please see MJX for a well maintained JAX-based physics engine: https://github.com/google-deepmind/mujoco/tree/main/mjx. For a host of environments that use MJX, see: https://github.com/google-deepmind/mujoco_playground.
+  warnings.warn(
+Using JAX default device: cuda:0.
+Using JAX default device: cuda:0.
+Using JAX default device: cuda:0.
+Using JAX default device: cuda:0.
+{'training/total_steps': 131072, 'training/updates': 1, 'training/walltime': np.float64(36.243), 'training/update_time': np.float64(36.243), 'training/pc_loss': 2.2221217155456543, 'training/mean_reward': -0.042647868394851685, 'training/mean_advantage_abs': 0.7041960954666138, 'diag/log_std_mean': -0.22205299139022827, 'diag/log_std_min': -1.3307033777236938, 'diag/frac_std_at_min': 0.0, 'diag/frac_std_at_max': 0.001953125, 'diag/mu_abs_mean': 0.20040667057037354, 'diag/policy_drift_mean': 0.020980095490813255, 'diag/policy_drift_max': 0.12818947434425354, 'diag/mu_target_mag_mean': 1.2688020467758179, 'diag/mu_target_mag_max': 19.31026840209961, 'diag/pretanh_sat_frac': 0.05941009521484375}
+{'training/total_steps': 262144, 'training/updates': 2, 'training/walltime': np.float64(50.764), 'training/update_time': np.float64(13.971), 'training/pc_loss': 2.4105334281921387, 'training/mean_reward': -0.014878259971737862, 'training/mean_advantage_abs': 0.7763849496841431, 'diag/log_std_mean': -0.3114340305328369, 'diag/log_std_min': -1.18498957157135, 'diag/frac_std_at_min': 0.0, 'diag/frac_std_at_max': 0.0, 'diag/mu_abs_mean': 0.17021100223064423, 'diag/policy_drift_mean': 0.008301792666316032, 'diag/policy_drift_max': 0.05478498712182045, 'diag/mu_target_mag_mean': 0.4503220021724701, 'diag/mu_target_mag_max': 6.331485748291016, 'diag/pretanh_sat_frac': 0.02801513671875}
+{'training/total_steps': 393216, 'training/updates': 3, 'training/walltime': np.float64(64.773), 'training/update_time': np.float64(14.001), 'training/pc_loss': 2.5314576625823975, 'training/mean_reward': -0.01365252397954464, 'training/mean_advantage_abs': 0.7651474475860596, 'diag/log_std_mean': -0.38838326930999756, 'diag/log_std_min': -1.3418705463409424, 'diag/frac_std_at_min': 0.0, 'diag/frac_std_at_max': 0.0, 'diag/mu_abs_mean': 0.167958065867424, 'diag/policy_drift_mean': 0.008584829978644848, 'diag/policy_drift_max': 0.07072865962982178, 'diag/mu_target_mag_mean': 0.4630584716796875, 'diag/mu_target_mag_max': 5.414039134979248, 'diag/pretanh_sat_frac': 0.01445770263671875}
+{'training/total_steps': 524288, 'training/updates': 4, 'training/walltime': np.float64(78.776), 'training/update_time': np.float64(13.993), 'training/pc_loss': 2.6943705081939697, 'training/mean_reward': -0.012425163760781288, 'training/mean_advantage_abs': 0.7790408134460449, 'diag/log_std_mean': -0.4485146403312683, 'diag/log_std_min': -1.3761509656906128, 'diag/frac_std_at_min': 0.0, 'diag/frac_std_at_max': 0.0, 'diag/mu_abs_mean': 0.16551224887371063, 'diag/policy_drift_mean': 0.014530765824019909, 'diag/policy_drift_max': 0.14124621450901031, 'diag/mu_target_mag_mean': 0.5424278974533081, 'diag/mu_target_mag_max': 10.733036994934082, 'diag/pretanh_sat_frac': 0.008819580078125}
+Using JAX default device: cuda:0.
+{'eval/num_episodes': 10, 'eval/mean_score': np.float64(-6.9171), 'eval/std_score': np.float64(0.6714), 'eval/mean_episode_length': np.float64(1000.0), 'eval/eval_time': np.float64(50.238)}
+{'training/total_steps': 655360, 'training/updates': 5, 'training/walltime': np.float64(143.248), 'training/update_time': np.float64(14.22), 'training/pc_loss': 2.838348388671875, 'training/mean_reward': -0.012405423447489738, 'training/mean_advantage_abs': 0.7943894863128662, 'diag/log_std_mean': -0.45643091201782227, 'diag/log_std_min': -1.1908016204833984, 'diag/frac_std_at_min': 0.0, 'diag/frac_std_at_max': 0.0, 'diag/mu_abs_mean': 0.153927743434906, 'diag/policy_drift_mean': 0.018075354397296906, 'diag/policy_drift_max': 0.09908472001552582, 'diag/mu_target_mag_mean': 0.5253340601921082, 'diag/mu_target_mag_max': 6.90090274810791, 'diag/pretanh_sat_frac': 0.006627400716145833}

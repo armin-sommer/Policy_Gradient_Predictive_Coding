@@ -1,0 +1,8 @@
+{
+  "config": "halfcheetah_pc_reinforce_adam_tanh_ts07_sota",
+  "commit": "39c1e012e465c1df1f4b6b03ba56d088037f8870",
+  "total_steps": 5000000,
+  "timestamp": "2026-07-21T11:36:44",
+  "env": "halfcheetah",
+  "algo": "pc_reinforce"
+}

@@ -1,0 +1,13 @@
+{
+  "config": "halfcheetah_pc_actor_critic_sgd_tanh_ts10_bench_lr003_mt80_nat_vlr1e4",
+  "commit": "3b1e78d2a188ca171338cbcc238422ef3b31b6ae",
+  "base_config": "halfcheetah_pc_actor_critic_sgd_tanh_ts10_bench_lr003_mt80.yaml",
+  "overrides": {
+    "train.natural_target": true,
+    "train.value_learning_rate": 0.0001
+  },
+  "total_steps": 1000000,
+  "timestamp": "2026-07-25T19:56:25",
+  "env": "halfcheetah",
+  "algo": "pc_actor_critic"
+}
