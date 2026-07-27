@@ -22,6 +22,7 @@ export PYTHONPATH="$REPO_ROOT/src:${PYTHONPATH:-}"
 cd "$REPO_ROOT"
 
 SEEDS="${1:-1 2 3}"
+STOP_GRACE="${STOP_GRACE:-60}"   # seconds to cancel the auto-stop
 STAMP="$(date +%Y%m%d_%H%M)"
 LOGDIR="$REPO_ROOT/results/overnight_batch_$STAMP"
 mkdir -p "$LOGDIR"
@@ -82,6 +83,24 @@ push_results () {
     git push -q origin "$RESULT_BRANCH"
 }
 
+stop_pod () {
+    # Stops (does NOT terminate) this pod -> GPU billing ends, /workspace volume
+    # and everything in it survives for the next start.
+    local pid="${RUNPOD_POD_ID:-}"
+    if ! command -v runpodctl >/dev/null 2>&1; then
+        echo "!!! runpodctl not on PATH -- cannot auto-stop. Stop the pod in the console."
+        return 1
+    fi
+    if [ -z "$pid" ]; then
+        echo "!!! RUNPOD_POD_ID not set -- cannot auto-stop. Stop the pod in the console."
+        return 1
+    fi
+    echo ""
+    echo "=== auto-stop: stopping pod $pid in ${STOP_GRACE}s -- Ctrl-C to cancel ==="
+    sleep "$STOP_GRACE"
+    runpodctl stop pod "$pid"
+}
+
 if git ls-remote --exit-code origin >/dev/null 2>&1 && push_results; then
     echo ""
     echo "=== results pushed to branch: $RESULT_BRANCH ==="
@@ -99,4 +118,15 @@ else
     echo "  Restart the pod later and pull with:"
     echo "    runpodctl send results/gradclip_probe results/knob_fill_smin_vlr $LOGDIR"
     echo "    (then on your Mac: runpodctl receive <code>)"
+fi
+
+# --- stop the pod so billing ends -------------------------------------------
+# On by default: the whole point of an overnight batch is not paying for idle
+# GPU after it finishes. AUTOSTOP=0 disables. Stop != terminate: the volume and
+# all results survive and are there when you start the pod again.
+if [ "${AUTOSTOP:-1}" = "1" ]; then
+    stop_pod || echo "!!! AUTO-STOP FAILED -- pod is still running and BILLING."
+else
+    echo ""
+    echo "AUTOSTOP=0 -> pod left running (still billing)."
 fi
