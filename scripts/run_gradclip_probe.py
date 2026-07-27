@@ -100,8 +100,8 @@ def run_seed(out, seed, dry):
     print(f"{'done' if proc.returncode == 0 else 'FAILED'} ({time.time()-t0:.0f}s)")
 
 
-def report():
-    """Print the measured grad-norm tail + the clip values it implies."""
+def read_tail():
+    """Last logged grad-norm percentiles from the measurement run."""
     log = RESULTS / MEASURE_NAME / "seed_1.log"
     if not log.exists():
         sys.exit(f"no measurement run yet: {log}\nrun --stage measure first")
@@ -116,6 +116,25 @@ def report():
             continue
     if last is None:
         sys.exit("no grad-norm percentiles in the log -- is the logging patch in?")
+    return last
+
+
+def derive_clips(tail):
+    """Bracket the guard around the measured tail: p999 (rare), p99, p99/3 (bites)."""
+    p99, p999 = tail["diag/policy_grad_norm_p99"], tail["diag/policy_grad_norm_p999"]
+    clips = [round(float(c), 4) for c in (p999, p99, p99 / 3.0)]
+    # de-duplicate while preserving order (tails can be flat enough to collide)
+    seen, out = set(), []
+    for c in clips:
+        if c > 0 and c not in seen:
+            seen.add(c)
+            out.append(c)
+    return out
+
+
+def report():
+    """Print the measured grad-norm tail + the clip values it implies."""
+    last = read_tail()
     p50, p90 = last["diag/policy_grad_norm_p50"], last["diag/policy_grad_norm_p90"]
     p99, p999 = last["diag/policy_grad_norm_p99"], last["diag/policy_grad_norm_p999"]
     print("\nGrad-norm distribution (Euclidean SGD, clip-free, cumulative):")
@@ -133,7 +152,7 @@ def report():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--stage", choices=["measure", "bracket"])
+    ap.add_argument("--stage", choices=["measure", "bracket", "auto"])
     ap.add_argument("--report", action="store_true")
     ap.add_argument("--clips", nargs="+", type=float)
     ap.add_argument("--seeds", nargs="+", type=int, default=[1, 2, 3])
@@ -142,12 +161,24 @@ def main():
 
     if args.report:
         return report()
-    if args.stage == "measure":
+    if args.stage in ("measure", "auto"):
         # clip off -> logged norms are the true, unclipped distribution.
         out = write_run(MEASURE_NAME, {"train.max_grad_norm": None})
         run_seed(out, 1, args.dry_run)
-        print("\nNow read the tail:\n  python scripts/run_gradclip_probe.py --report")
-    elif args.stage == "bracket":
+        if args.stage == "measure":
+            print("\nNow read the tail:\n  python scripts/run_gradclip_probe.py --report")
+            return
+
+    if args.stage == "auto":
+        # unattended: derive the bracket from the measured tail, no human step.
+        if args.dry_run:
+            print("\nDRY: would read the tail and bracket around p999 / p99 / p99/3")
+            return
+        report()
+        args.clips = derive_clips(read_tail())
+        print(f"\nauto-derived clips: {args.clips}\n")
+
+    if args.stage in ("bracket", "auto"):
         if not args.clips:
             sys.exit("--clips required (get them from --report)")
         for clip in args.clips:
@@ -159,7 +190,7 @@ def main():
         print(f"\nAnalyze:\n  python scripts/analyze_pcpg_logs.py --results-dir {RESULTS}")
         print("Then compare diag/policy_grad_norm_bind_rate vs collapse count.")
     else:
-        ap.error("need --stage measure|bracket or --report")
+        ap.error("need --stage measure|bracket|auto or --report")
 
 
 if __name__ == "__main__":
