@@ -61,5 +61,38 @@ done
 MINS=$(( ($(date +%s) - START) / 60 ))
 echo ""
 echo "=== batch done in ${MINS} min ==="
-echo "pull everything to your Mac (do this BEFORE terminating the pod):"
-echo "  runpodctl send results/gradclip_probe results/knob_fill_smin_vlr $LOGDIR"
+
+# --- push results so the pod is disposable ----------------------------------
+# Pushes to a DEDICATED branch (results/overnight-<stamp>), never to the feature
+# branch: the pod's results/ tree diverges from your Mac's, and pushing there
+# would recreate the untracked-file collision. Merge/cherry-pick at your leisure.
+#
+# Auth: needs a token-bearing remote, which YOU set up once on the pod:
+#     git remote set-url origin https://<YOUR_TOKEN>@github.com/armin-sommer/Policy_Gradient_Predictive_Coding.git
+# (a fine-grained PAT with Contents:read+write on this repo is enough).
+# Without it this block is skipped and the runpodctl fallback is printed.
+RESULT_BRANCH="results/overnight-$STAMP"
+push_results () {
+    git config user.email "${GIT_AUTHOR_EMAIL:-pod@runpod.local}"
+    git config user.name  "${GIT_AUTHOR_NAME:-runpod batch}"
+    git checkout -b "$RESULT_BRANCH" || return 1
+    git add -f results/gradclip_probe results/knob_fill_smin_vlr "$LOGDIR" 2>/dev/null
+    git commit -q -m "Overnight batch $STAMP: gradclip probe + knob fill results" || {
+        echo "nothing new to commit"; return 1; }
+    git push -q origin "$RESULT_BRANCH"
+}
+
+if git ls-remote --exit-code origin >/dev/null 2>&1 && push_results; then
+    echo ""
+    echo "=== results pushed to branch: $RESULT_BRANCH ==="
+    echo "SAFE TO TERMINATE THE POD."
+    echo "on your Mac:  git fetch origin && git checkout $RESULT_BRANCH"
+else
+    echo ""
+    echo "!!! could not push (no write credentials on this pod, or nothing to commit)."
+    echo "!!! DO NOT TERMINATE YET -- pull manually first:"
+    echo "  runpodctl send results/gradclip_probe results/knob_fill_smin_vlr $LOGDIR"
+    echo ""
+    echo "to enable auto-push next time, set a token-bearing remote on the pod:"
+    echo "  git remote set-url origin https://<TOKEN>@github.com/armin-sommer/Policy_Gradient_Predictive_Coding.git"
+fi
