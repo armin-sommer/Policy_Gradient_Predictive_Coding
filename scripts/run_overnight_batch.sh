@@ -29,6 +29,27 @@ mkdir -p "$LOGDIR"
 
 echo "=== overnight batch $STAMP | seeds: $SEEDS ==="
 echo "block logs -> $LOGDIR"
+
+# --- preflight: verify auto-stop BEFORE burning a night of GPU ---------------
+# Finding out at 3am that the stop was unauthorized is the expensive failure.
+if [ "${AUTOSTOP:-1}" = "1" ]; then
+    if runpodctl get pod "${RUNPOD_POD_ID:-}" >/dev/null 2>&1; then
+        echo "auto-stop: OK (pod ${RUNPOD_POD_ID} will stop when done)"
+    else
+        echo ""
+        echo "!!! ============================================================"
+        echo "!!! AUTO-STOP WILL NOT WORK -- the pod would keep BILLING."
+        echo "!!! runpodctl cannot reach the API (missing/invalid API key)."
+        echo "!!!"
+        echo "!!! Fix, in THIS shell, then re-run:"
+        echo "!!!     export RUNPOD_API_KEY=<your-key>     # console/user/settings"
+        echo "!!!     runpodctl get pod \$RUNPOD_POD_ID     # must not say Unauthorized"
+        echo "!!!"
+        echo "!!! Continuing in 20s anyway (Ctrl-C to abort and fix)."
+        echo "!!! ============================================================"
+        sleep 20
+    fi
+fi
 START=$(date +%s)
 
 run_block () {   # run_block <name> <cmd...>
