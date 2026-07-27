@@ -90,9 +90,13 @@ if git ls-remote --exit-code origin >/dev/null 2>&1 && push_results; then
 else
     echo ""
     echo "!!! could not push (no write credentials on this pod, or nothing to commit)."
-    echo "!!! DO NOT TERMINATE YET -- pull manually first:"
-    echo "  runpodctl send results/gradclip_probe results/knob_fill_smin_vlr $LOGDIR"
+    echo "!!! results exist ONLY on this pod's volume, at:"
+    echo "      $REPO_ROOT/results/{gradclip_probe,knob_fill_smin_vlr}"
     echo ""
-    echo "to enable auto-push next time, set a token-bearing remote on the pod:"
-    echo "  git remote set-url origin https://<TOKEN>@github.com/armin-sommer/Policy_Gradient_Predictive_Coding.git"
+    echo "  ==> STOP the pod (safe: /workspace persists, billed storage only)."
+    echo "  ==> DO NOT TERMINATE -- terminate deletes the volume and these runs."
+    echo ""
+    echo "  Restart the pod later and pull with:"
+    echo "    runpodctl send results/gradclip_probe results/knob_fill_smin_vlr $LOGDIR"
+    echo "    (then on your Mac: runpodctl receive <code>)"
 fi
