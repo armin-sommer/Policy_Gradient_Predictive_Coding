@@ -241,6 +241,12 @@ def main(_):
 
     global_step = 0
     start_time = time.time()
+    # Every PC policy-gradient norm seen so far (one per weight update). Used for
+    # the cumulative tail percentiles + clip bind-rate below: a *numerical guard*
+    # should sit in the tail and rarely bind, so p99/p99.9 is how you pick
+    # max_grad_norm from data instead of guessing, and bind_rate is how you tell a
+    # guard (rare) from a de-facto step limiter (frequent).
+    run_gnorms = []
 
     for training_step in range(1, num_training_steps + 1):
         update_time_start = time.time()
@@ -318,6 +324,7 @@ def main(_):
         pgn_max = jnp.array(0.0)
         pgn_sum = jnp.array(0.0)
         pgn_cnt = 0
+        mb_gnorms = []  # this step's norms, stacked once to avoid per-mb syncs
 
         for _ in range(Config.update_epochs):
             key, key_perm = jr.split(key)
@@ -392,8 +399,12 @@ def main(_):
                     pgn_max = jnp.maximum(pgn_max, gnorm)
                     pgn_sum = pgn_sum + gnorm
                     pgn_cnt += 1
+                    mb_gnorms.append(gnorm)
 
         global_step += env_step_per_training_step
+        if mb_gnorms:
+            run_gnorms.extend(np.asarray(jnp.stack(mb_gnorms)).tolist())
+        gn_hist = np.asarray(run_gnorms) if run_gnorms else np.zeros(1)
         metrics = {
             'training/total_steps': global_step,
             'training/updates': training_step,
@@ -406,6 +417,18 @@ def main(_):
             'training/mean_advantage_abs': float(np.abs(advantages).mean()),
             'diag/policy_grad_norm_max': float(pgn_max),
             'diag/policy_grad_norm_mean': float(pgn_sum / max(pgn_cnt, 1)),
+            # cumulative tail of the grad-norm distribution (all updates so far):
+            # read p99/p999 off a clip-free run to *choose* max_grad_norm.
+            'diag/policy_grad_norm_p50': float(np.percentile(gn_hist, 50)),
+            'diag/policy_grad_norm_p90': float(np.percentile(gn_hist, 90)),
+            'diag/policy_grad_norm_p99': float(np.percentile(gn_hist, 99)),
+            'diag/policy_grad_norm_p999': float(np.percentile(gn_hist, 99.9)),
+            # fraction of ALL weight updates so far whose pre-clip norm would hit
+            # max_grad_norm. Rare (<1%) = numerical guard; frequent (>10%) = the
+            # clip is really acting as a step limiter.
+            'diag/policy_grad_norm_bind_rate': (
+                float((gn_hist >= float(Config.max_grad_norm)).mean())
+                if Config.max_grad_norm is not None else 0.0),
             'diag/value_explained_var': float(
                 1.0 - np.var(value_targets - values) / (np.var(value_targets) + 1e-8)),
         }
