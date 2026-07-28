@@ -1,0 +1,14 @@
+{
+  "config": "halfcheetah_pc_actor_critic_adam_tanh_ts07_sota_lr0002_5m",
+  "commit": "4d4f8aa54091189c5541bb503c5fee0482a6c824",
+  "total_steps": 5000000,
+  "timestamp": "2026-07-20T23:08:25",
+  "env": "halfcheetah",
+  "algo": "pc_actor_critic",
+  "optimizer": "adam",
+  "target_scale": 0.7,
+  "learning_rate": 0.0002,
+  "value_learning_rate": 0.0003,
+  "width": 256,
+  "num_envs": 1024
+}
