@@ -52,27 +52,22 @@ Two consequences that matter when reading every table:
 
 1. **Only a run that first reached 300 can ever be counted as collapsed — so a
    config whose runs never got that far also shows `0/3`, and there the zero means
-   "never learned", not "stable".** Affected: all `pc_reinforce` bench rows (§3.1),
-   all SGD `clip1.0` rows (§3.2), all SGD `stdglobal` rows (§3.4), and partly the 5M
-   SGD rows (§3.8).
+   "never learned", not "stable".** 
 2. **`collapse = 0` does not mean no degradation.** Nine runs have
-   `collapse = 0` but `severe_collapse = 1` (peaked ≥300, ended <0) — the rule needs
-   3 *consecutive* sub-threshold evals, so a late fall can miss it. Flagged inline
-   where it occurs.
-
+   `collapse = 0` but `severe_collapse = 1` (peaked ≥300, ended <0)
 ---
 
 ## 2. Overview of all runs
 
-| recipe | final | collapse | note |
-|---|---|---|---|
-| **SGD + natural + mt20** | **781 ± 47** | **0/3** | best stable result at 1M |
-| Adam + natural + mt20 | 425 ± 491 | 1/3 | same target, unstable |
-| Adam Euclidean mt20 (baseline) | 649 ± 644 | 1/3 | higher peak, unreliable |
-| SGD Euclidean mt20 | 279 ± 466 | 2/3 | `kl_max` reaches 5.1 |
-| Adam + global σ (PPO-style) | −599 ± 968 | 2/3 | worst config tested |
-| Adam capacity-matched 5M | best single final **2937** | 2/3 | 2nd-highest final; unreliable |
-| Adam 5M `ts05 lr0002` | best single final **3205** | 2/3 | highest final in the project |
+| recipe                         | final                      | collapse | note                          |
+| ------------------------------ | -------------------------- | -------- | ----------------------------- |
+| **SGD + natural + mt20**       | **781 ± 47**               | **0/3**  | best stable result at 1M      |
+| Adam + natural + mt20          | 425 ± 491                  | 1/3      | same target, unstable         |
+| Adam Euclidean mt20 (baseline) | 649 ± 644                  | 1/3      | higher peak, unreliable       |
+| SGD Euclidean mt20             | 279 ± 466                  | 2/3      | `kl_max` reaches 5.1          |
+| Adam + global σ (PPO-style)    | −599 ± 968                 | 2/3      | worst config tested           |
+| Adam capacity-matched 5M       | best single final **2937** | 2/3      | 2nd-highest final; unreliable |
+| Adam 5M `ts05 lr0002`          | best single final **3205** | 2/3      | highest final in the project  |
 
 ---
 
@@ -109,6 +104,54 @@ what makes PCPG work at this scale.
 
 ![baseline sweep](../results/trust_region_kl/learning_curve.png)
 *§3.1 all 16 baseline configs.*
+
+#### 3.1a What moves first when these runs collapse
+
+Timing analysis over the **17 collapsing runs** in this folder (peak-to-trough eval
+drop > 400). Collapse onset = the eval peak before the fall. For each diagnostic I
+take the step at which it first doubles **from its post-initialisation minimum** —
+searching only after that minimum, so the initial decay cannot be mistaken for a
+rise. Negative = the signal moved *before* the return started falling.
+
+| signal | median lead | moved before onset |
+|---|---|---|
+| **`mu_target_mag` doubles** | **−205k** | **17/17** |
+| `policy_drift` doubles | −156k | 16/17 |
+| `\|μ\|` doubles | −131k | 15/17 |
+| `kl_max` doubles | −131k | 13/17 |
+| `pretanh_sat` doubles | −25k | 12/17 |
+| train reward peaks | +8k | 6/17 |
+| **`value_explained_var` bottoms** | **+213k** | 4/17 (*after*) |
+
+**Three results.**
+
+1. **The target magnitude moves first, in every run.** `mu_target_mag_max` — the raw
+   size of the offset the PC target asks for — doubles a median 205k steps before the
+   return turns, in 17 of 17. It is the only universal precursor and it is upstream
+   of the others.
+2. **KL rises beforehand here, but its peak does not.** `kl_max` doubling leads in
+   13/17, so unlike the natural-target runs (§4.1) KL growth *is* part of the run-up.
+   But the KL **maximum** lags onset in 16/17 (median +451k) — the largest spike
+   happens during or after the fall. "A KL spike caused it" remains unsupported;
+   KL growth is a symptom of the target growing.
+3. **The critic degrades afterwards.** `value_explained_var` bottoms out *after*
+   onset in 13/17 (median +213k). In this family a broken critic is a **consequence**
+   of the policy already falling apart, not its cause — worth contrasting with the
+   critic-side reading of the SGD natural-target runs.
+
+Implied ordering: `target magnitude ↑ → drift ↑ → |μ| ↑ → KL ↑ → saturation ↑ →
+return falls → critic degrades`.
+
+⚠ **Two limits.** These quantities are mechanically coupled — the offset *is*
+`ts·A·(z−μ)/σ²`, so a bigger target necessarily produces bigger drift and bigger KL.
+Ordering them in time does not separate cause from arithmetic consequence. And the
+"doubling" threshold is arbitrary; the ordering held when the multiple was varied,
+but the individual leads move.
+
+*(Reproduce: the timing script is not committed; it reads `seed_*.log` directly and
+recomputes onset per run. Two earlier versions of this analysis produced artifacts —
+`argmin` of train reward always returns step 8k before reward normalisation settles,
+and a saturation threshold crossed during the initial decay — both discarded.)*
 
 ### 3.2 `trust_region_kl_clip` — clip the policy gradient (9 configs, 26 runs)
 
