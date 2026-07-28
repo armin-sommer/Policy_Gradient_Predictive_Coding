@@ -1,0 +1,41 @@
+Running 4 configs x 3 seeds = 12 seed-runs (~7 min each)
+Results: /workspace/PCPG/results/knob_fill_smin_vlr
+
+=== halfcheetah_pc_actor_critic_adam_tanh_ts10_bench_mt20_nat_sminm15 seed 1 -> /workspace/PCPG/results/knob_fill_smin_vlr/halfcheetah_pc_actor_critic_adam_tanh_ts10_bench_mt20_nat_sminm15/seed_1.log ===
+done (479s)
+
+=== halfcheetah_pc_actor_critic_adam_tanh_ts10_bench_mt20_nat_sminm15 seed 2 -> /workspace/PCPG/results/knob_fill_smin_vlr/halfcheetah_pc_actor_critic_adam_tanh_ts10_bench_mt20_nat_sminm15/seed_2.log ===
+done (484s)
+
+=== halfcheetah_pc_actor_critic_adam_tanh_ts10_bench_mt20_nat_sminm15 seed 3 -> /workspace/PCPG/results/knob_fill_smin_vlr/halfcheetah_pc_actor_critic_adam_tanh_ts10_bench_mt20_nat_sminm15/seed_3.log ===
+done (482s)
+
+=== halfcheetah_pc_actor_critic_adam_tanh_ts10_bench_mt20_nat_sminm10 seed 1 -> /workspace/PCPG/results/knob_fill_smin_vlr/halfcheetah_pc_actor_critic_adam_tanh_ts10_bench_mt20_nat_sminm10/seed_1.log ===
+done (480s)
+
+=== halfcheetah_pc_actor_critic_adam_tanh_ts10_bench_mt20_nat_sminm10 seed 2 -> /workspace/PCPG/results/knob_fill_smin_vlr/halfcheetah_pc_actor_critic_adam_tanh_ts10_bench_mt20_nat_sminm10/seed_2.log ===
+done (481s)
+
+=== halfcheetah_pc_actor_critic_adam_tanh_ts10_bench_mt20_nat_sminm10 seed 3 -> /workspace/PCPG/results/knob_fill_smin_vlr/halfcheetah_pc_actor_critic_adam_tanh_ts10_bench_mt20_nat_sminm10/seed_3.log ===
+done (489s)
+
+=== halfcheetah_pc_actor_critic_sgd_tanh_ts10_bench_lr003_mt80_nat_vlr1e4 seed 1 -> /workspace/PCPG/results/knob_fill_smin_vlr/halfcheetah_pc_actor_critic_sgd_tanh_ts10_bench_lr003_mt80_nat_vlr1e4/seed_1.log ===
+done (468s)
+
+=== halfcheetah_pc_actor_critic_sgd_tanh_ts10_bench_lr003_mt80_nat_vlr1e4 seed 2 -> /workspace/PCPG/results/knob_fill_smin_vlr/halfcheetah_pc_actor_critic_sgd_tanh_ts10_bench_lr003_mt80_nat_vlr1e4/seed_2.log ===
+done (456s)
+
+=== halfcheetah_pc_actor_critic_sgd_tanh_ts10_bench_lr003_mt80_nat_vlr1e4 seed 3 -> /workspace/PCPG/results/knob_fill_smin_vlr/halfcheetah_pc_actor_critic_sgd_tanh_ts10_bench_lr003_mt80_nat_vlr1e4/seed_3.log ===
+done (485s)
+
+=== halfcheetah_pc_actor_critic_sgd_tanh_ts10_bench_lr003_mt80_nat_vlr1e3 seed 1 -> /workspace/PCPG/results/knob_fill_smin_vlr/halfcheetah_pc_actor_critic_sgd_tanh_ts10_bench_lr003_mt80_nat_vlr1e3/seed_1.log ===
+done (480s)
+
+=== halfcheetah_pc_actor_critic_sgd_tanh_ts10_bench_lr003_mt80_nat_vlr1e3 seed 2 -> /workspace/PCPG/results/knob_fill_smin_vlr/halfcheetah_pc_actor_critic_sgd_tanh_ts10_bench_lr003_mt80_nat_vlr1e3/seed_2.log ===
+done (471s)
+
+=== halfcheetah_pc_actor_critic_sgd_tanh_ts10_bench_lr003_mt80_nat_vlr1e3 seed 3 -> /workspace/PCPG/results/knob_fill_smin_vlr/halfcheetah_pc_actor_critic_sgd_tanh_ts10_bench_lr003_mt80_nat_vlr1e3/seed_3.log ===
+done (488s)
+
+Analyze with:
+  python scripts/analyze_pcpg_logs.py --results-dir /workspace/PCPG/results/knob_fill_smin_vlr

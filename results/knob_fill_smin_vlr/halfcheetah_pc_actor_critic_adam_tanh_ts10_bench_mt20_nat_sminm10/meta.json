@@ -1,13 +1,13 @@
 {
   "config": "halfcheetah_pc_actor_critic_adam_tanh_ts10_bench_mt20_nat_sminm10",
-  "commit": "3b1e78d2a188ca171338cbcc238422ef3b31b6ae",
+  "commit": "a1067e1c28d06c93ba6b3bd3c8fa3e7bb97a5161",
   "base_config": "halfcheetah_pc_actor_critic_adam_tanh_ts10_bench_mt20.yaml",
   "overrides": {
     "train.natural_target": true,
     "agent.log_std_min": -1.0
   },
   "total_steps": 1000000,
-  "timestamp": "2026-07-25T19:56:25",
+  "timestamp": "2026-07-27T22:21:05",
   "env": "halfcheetah",
   "algo": "pc_actor_critic"
 }

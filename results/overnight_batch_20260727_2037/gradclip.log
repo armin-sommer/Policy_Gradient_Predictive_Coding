@@ -1,0 +1,51 @@
+
+=== sgd_euclid_mt20_lr003_noclip_measure seed 1 -> /workspace/PCPG/results/gradclip_probe/sgd_euclid_mt20_lr003_noclip_measure/seed_1.log ===
+done (462s)
+
+Grad-norm distribution (Euclidean SGD, clip-free, cumulative):
+  p50   0.6710
+  p90   0.9409
+  p99   4.3870
+  p999  10.2414
+  max   0.9928  (last update)
+
+  tail ratio p99/p50 = 6.5x
+  -> real tail. A guard belongs near p99-p999.
+
+Suggested stage 2:
+  python scripts/run_gradclip_probe.py --stage bracket --clips 10.2 4.39 1.46 --seeds 1 2 3
+
+
+auto-derived clips: [10.2414, 4.387, 1.4623]
+
+
+=== sgd_euclid_mt20_lr003_clip10p2414 seed 1 -> /workspace/PCPG/results/gradclip_probe/sgd_euclid_mt20_lr003_clip10p2414/seed_1.log ===
+done (464s)
+
+=== sgd_euclid_mt20_lr003_clip10p2414 seed 2 -> /workspace/PCPG/results/gradclip_probe/sgd_euclid_mt20_lr003_clip10p2414/seed_2.log ===
+done (473s)
+
+=== sgd_euclid_mt20_lr003_clip10p2414 seed 3 -> /workspace/PCPG/results/gradclip_probe/sgd_euclid_mt20_lr003_clip10p2414/seed_3.log ===
+done (492s)
+
+=== sgd_euclid_mt20_lr003_clip4p387 seed 1 -> /workspace/PCPG/results/gradclip_probe/sgd_euclid_mt20_lr003_clip4p387/seed_1.log ===
+done (468s)
+
+=== sgd_euclid_mt20_lr003_clip4p387 seed 2 -> /workspace/PCPG/results/gradclip_probe/sgd_euclid_mt20_lr003_clip4p387/seed_2.log ===
+done (473s)
+
+=== sgd_euclid_mt20_lr003_clip4p387 seed 3 -> /workspace/PCPG/results/gradclip_probe/sgd_euclid_mt20_lr003_clip4p387/seed_3.log ===
+done (495s)
+
+=== sgd_euclid_mt20_lr003_clip1p4623 seed 1 -> /workspace/PCPG/results/gradclip_probe/sgd_euclid_mt20_lr003_clip1p4623/seed_1.log ===
+done (470s)
+
+=== sgd_euclid_mt20_lr003_clip1p4623 seed 2 -> /workspace/PCPG/results/gradclip_probe/sgd_euclid_mt20_lr003_clip1p4623/seed_2.log ===
+done (471s)
+
+=== sgd_euclid_mt20_lr003_clip1p4623 seed 3 -> /workspace/PCPG/results/gradclip_probe/sgd_euclid_mt20_lr003_clip1p4623/seed_3.log ===
+done (498s)
+
+Analyze:
+  python scripts/analyze_pcpg_logs.py --results-dir /workspace/PCPG/results/gradclip_probe
+Then compare diag/policy_grad_norm_bind_rate vs collapse count.
