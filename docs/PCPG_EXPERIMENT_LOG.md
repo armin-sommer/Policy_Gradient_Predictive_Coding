@@ -8,14 +8,11 @@ update **reliable across seeds**.
 *Matched baselines in this repo* (`results/mujoco/`, same [64,64] net, 256 envs, 1M
 steps, 3 seeds): PPO best-per-seed **1759 / 4360 / 2590** (mean 2903); TRPO
 **1276 / 1408 / 1330** (mean 1338). Best PCPG at that budget: mean best **862**
-(§3.5). So PCPG is ~3× below PPO and ~1.5× below TRPO on matched settings. (A "PPO
-≈ 4.4k" figure quoted earlier was PPO's *best single seed peak*, not a typical
-value.)
+(§3.5). So PCPG is ~3× below PPO and ~1.5× below TRPO on matched settings.
 
 **Status in one line:** the tightest 3-seed result to date is
 `SGD + natural target + max_t1=20` (**781 ± 47**, 0/3 collapse); four other
-stabilisation strategies were tested and did not remove the collapses; the mechanism
-of the remaining collapses is **not yet established**.
+stabilisation strategies were tested and did not remove the collapses.
 
 *(Note: it is not the only 0-collapse config — `adam mt80` (§3.1),
 `adam mt10 clip1.0` and `adam mt80 clip1.0` (§3.2) are also 0/3 with all seeds
@@ -24,7 +21,7 @@ viable. What distinguishes SGD+natural+mt20 is the seed spread: std 47 versus
 
 ---
 
-## 1. The update chain
+## 1. Update chain
 
 ```
 advantage A ─▶ target = μ + ts·A·(z−μ)/σ²  ─▶ PC inference (max_t1 steps) ─▶ weight grad ─▶ optimizer step
@@ -33,8 +30,7 @@ advantage A ─▶ target = μ + ts·A·(z−μ)/σ²  ─▶ PC inference (max_
                              clip     (σ floor)                            (SGD only)
 ```
 
-Actions are `a = tanh(z)`, `z ~ N(μ,σ)` — the *same* squashed-Gaussian PPO uses in
-this repo (`NormalTanhDistribution`, `src/networks/distributions.py`)
+Actions are `a = tanh(z)`, `z ~ N(μ,σ)`  the *same* Gaussian PPO uses (`NormalTanhDistribution`, `src/networks/distributions.py`)
 
 ---
 
@@ -42,22 +38,24 @@ this repo (`NormalTanhDistribution`, `src/networks/distributions.py`)
 
 All from `scripts/analyze_pcpg_logs.py`.
 
-| metric | definition | trap |
-|---|---|---|
-| `final` | last eval score | — |
-| `best` | max eval score over the run | — |
-| `AUC` | *time-averaged* return: trapezoid area ÷ step span. Not a raw area. | comparable only within equal step budgets |
-| `kl_max` | max over the run of the per-update `diag/policy_kl_max` | max-of-max; one bad update sets it |
-| `± value` | **population** std (`np.std`, ddof=0) over seeds, n=3 | understates sample sd by ×1.22; **not** a standard error |
-| `collapse` | run first reaches **VIABILITY = 300**, then sits below 30% of its running best for **3 consecutive** evals | **a run that never reaches 300 can never be flagged collapsed** |
-| `severe_collapse` | best ≥ 300 **and** final < 0 | reported in `per_run.csv`, *not* in the tables below |
+| metric            | definition                                                                                                 | trap                                                        |
+| ----------------- | ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `final`           | last eval score                                                                                            | —                                                           |
+| `best`            | max eval score over the run                                                                                | —                                                           |
+| `AUC`             | *time-averaged* return: trapezoid area ÷ step span                                                         | comparable only within equal step budgets                   |
+| `kl_max`          | max over the run of the per-update `diag/policy_kl_max`                                                    | max-of-max; one bad update sets it                          |
+| `± value`         | **population** std (`np.std`, ddof=0) over seeds, n=3                                                      | understates sample sd by ×1.22; **not** a standard error    |
+| `collapse`        | run first reaches **VIABILITY = 300**, then sits below 30% of its running best for **3 consecutive** evals | a run that never reaches 300 can never be flagged collapsed |
+| `severe_collapse` | best ≥ 300 **and** final < 0                                                                               | reported in `per_run.csv`, *not* in the tables below        |
 
 Two consequences that matter when reading every table:
 
-1. **`0/3` is vacuous where no seed reached 300.** This applies to all
-   `pc_reinforce` bench rows (§3.1), all SGD `clip1.0` rows (§3.2), all SGD
-   `stdglobal` rows (§3.4), and partially to the 5M SGD rows (§3.8). In those cells
-   `0/3` means "never got good enough to collapse", not "stable".
+1. **`0/3` measures nothing where no seed reached 300.** The rule asks "did the run
+   climb above 300 and then fall apart?" — if the run never climbed above 300, the
+   answer is no, and it scores `0/3`: the same score a genuinely stable config gets.
+   This affects all `pc_reinforce` bench rows (§3.1), all SGD `clip1.0` rows (§3.2),
+   all SGD `stdglobal` rows (§3.4), and partly the 5M SGD rows (§3.8). In those cells
+   `0/3` means **"never learned"**, not "stable" — the opposite of what it looks like.
 2. **`collapse = 0` does not mean no degradation.** Nine runs have
    `collapse = 0` but `severe_collapse = 1` (peaked ≥300, ended <0) — the rule needs
    3 *consecutive* sub-threshold evals, so a late fall can miss it. Flagged inline
@@ -81,23 +79,23 @@ Two consequences that matter when reading every table:
 
 ## 3. Sweeps (ordered)
 
-### 3.1 `trust_region_kl` — the baseline matrix (16 configs, 48 runs, 1M)
+### 3.1 `trust_region_kl` — baseline matrix (16 configs, 48 runs, 1M)
 
 *Question: optimizer × inference length × algorithm, no stabilisers.*
 
-| config | final | collapse | kl_max | value_ev |
-|---|---|---|---|---|
-| adam mt10 | 649 ± 440 | 1/3 | 0.49 | +0.39 |
-| adam mt20 | 649 ± 644 | 1/3 | 0.42 | +0.30 |
-| adam mt40 | 391 ± 547 | 1/3 | 0.46 | +0.38 |
-| adam mt80 | 699 ± 441 | 0/3 | 2.91 | +0.34 |
-| sgd mt10 | 406 ± 475 | 1/3 | 3.14 | −0.72 |
-| sgd mt20 | 279 ± 466 | 2/3 | 5.15 | −0.75 |
-| sgd mt40 | −62 ± 535 | 1/3 | **58.5** | −0.59 |
-| sgd mt80 | −99 ± 405 | 2/3 | **295.8** | −0.71 |
-| pc_reinforce (all 8) | 8–66 (config means) | 0/3 ⚠ | 0.04–0.08 | n/a |
+| config               | final               | collapse | kl_max    | value_ev |
+| -------------------- | ------------------- | -------- | --------- | -------- |
+| adam mt10            | 649 ± 440           | 1/3      | 0.49      | +0.39    |
+| adam mt20            | 649 ± 644           | 1/3      | 0.42      | +0.30    |
+| adam mt40            | 391 ± 547           | 1/3      | 0.46      | +0.38    |
+| adam mt80            | 699 ± 441           | 0/3      | 2.91      | +0.34    |
+| sgd mt10             | 406 ± 475           | 1/3      | 3.14      | −0.72    |
+| sgd mt20             | 279 ± 466           | 2/3      | 5.15      | −0.75    |
+| sgd mt40             | −62 ± 535           | 1/3      | **58.5**  | −0.59    |
+| sgd mt80             | −99 ± 405           | 2/3      | **295.8** | −0.71    |
+| pc_reinforce (all 8) | 8–66 (config means) | 0/3 ⚠    | 0.04–0.08 | n/a      |
 
-⚠ **vacuous**: no pc_reinforce seed ever reached VIABILITY=300 (best per seed ≤ 230), so the collapse rule cannot fire. Read as "never learned", not "stable".
+⚠ **the `0/3` here means "never learned", not "stable"**: no pc_reinforce seed ever reached the viability threshold of 300 (best per seed ≤ 230), so the collapse rule can never fire.
 
 **Findings.** (a) The Euclidean `1/σ²` target under SGD produces extremely large
 policy updates — `kl_max` up to **296** — and gets worse with more inference (3.1 →
@@ -232,7 +230,7 @@ adopting it stabilise PCPG?
 | adam mt80 stdglobal | −451 ± 84 | 1/3 | 170.2 | 0.73 |
 | sgd (all) | −46 … −0 | 0/3 ⚠ | 0.6–1.0 | 0.06 |
 
-⚠ **vacuous**: no SGD `stdglobal` seed reached 300 (best ≤ 73). These runs did not learn; the 0/3 is not evidence of stability.
+⚠ **the `0/3` here means "never learned", not "stable"**: no SGD `stdglobal` seed reached the viability threshold of 300 (best ≤ 73), so the collapse rule can never fire.
 
 **Finding.** With a **state-independent** `log_std` — the parameterisation PPO uses
 successfully here — every Adam cell ends with a negative mean return (−451 to −647),
@@ -449,9 +447,10 @@ target, which is the whole point of §3.5. So this run is *not* the §3.5 recipe
 5M and cannot show that recipe is unsafe. **The actual experiment — natural target,
 ts=1.0, SGD lr=0.03, at 5M — has never been run.**
 
-The SGD rows marked 0/3 are also weak evidence: `sgd ts05 lr0003` had 1 of 3 seeds
-reach viability and `sgd ts05 lr001` likewise, so those 0/3 counts are largely
-vacuous.
+The SGD rows marked 0/3 are also weak evidence: in both `sgd ts05 lr0003` and
+`sgd ts05 lr001` only 1 of 3 seeds ever reached 300, so for the other two seeds the
+collapse rule could not fire — those `0/3` counts mostly reflect runs that never
+learned, not runs that held up.
 
 **`pcr_sota`** (PC-REINFORCE, 8 configs, 24 runs, 5M): the single highest peak in
 this whole project — **3522** (ts06 seed 2) — followed by catastrophic collapse:
