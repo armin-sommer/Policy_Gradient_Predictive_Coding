@@ -240,12 +240,12 @@ optimizer-target interaction.** `mt80` adds seed variance without benefit.
 ![natural learning curve](../results/trust_region_kl_natural/learning_curve.png)
 *§3.5 natural target: the SGD mt20 curves are the tight bundle.*
 
-### 3.6 `gradclip_probe` — Marco's check, done properly (4 configs, 10 runs)
+### 3.6 `gradclip_probe` — clip the policy gradient, with thresholds from the measured gradient distribution (4 configs, 10 runs)
 
 **Changed:** `train.max_grad_norm`: `null` → `10.24` / `4.39` / `1.46`, on
 `halfcheetah_pc_actor_critic_sgd_tanh_ts10_bench_lr003_mt20` — i.e. **SGD at the
 working `lr=0.03`**, `natural_target` left `false` so the `1/σ²` factor is retained.
-Same code path as §3.2 (`pc_actor_critic.py:194-196`).
+Same code path as §3.2 (`pc_actor_critic.py:192-197`).
 
 **Why these three values:** §3.2 guessed `1.0`, which turned out to be above the
 gradient distribution and never fired. Here a first run with clipping off measured
@@ -267,7 +267,7 @@ as Marco predicted.
 | 4.39 (p99) | 0.47% | 3.49 / 2.48 / 0.31 | 280 ± 503 | 2/3 |
 | 1.46 (p99/3) | **1.56%** | **0.46 / 0.53 / 0.37** | 272 ± 475 | 1/3 |
 
-**Finding.** The clip fired and did not prevent the collapse. At `max_grad_norm=1.46`
+**Finding.** The clip fired, yet collapses still occurred. At `max_grad_norm=1.46`
 it clipped 1.56% of all policy updates and reduced `kl_max` from 6–12 to ~0.4 — so the
 realised policy step per update dropped more than 10× — and mean returns remained
 essentially unchanged (267 → 294 → 280 → 272). Collapse count went 2/3 → 2/3 → 1/3,
@@ -287,10 +287,13 @@ unclipped). The returns did not follow. Two reasons are consistent with the data
    moving the policy in a consistent direction. A global-norm clip shortens each step
    but does not change its direction, so it slows the walk without changing where it
    goes.
-2. **The gradient norm carries no collapse information here.** Under the natural
-   target, seeds that collapse have gradient norms equal to or *lower* than seeds that
-   do not (§4.3: 0.204 → 0.199 while crashing, vs 0.264 healthy). A rule that
-   triggers on `‖g‖` cannot separate the two cases, whatever threshold you choose.
+2. **The gradient norm does not separate collapsing from healthy runs.** In these
+   Euclidean runs the norm does roughly double during a collapse (seed 1
+   0.552 → 1.005; seed 2 0.750 → 1.942), so Marco's mechanism is visible. But the
+   *healthy* seed 3 sits flat at **1.04** — higher than crashing seed 1 ever reaches.
+   A threshold on `‖g‖` therefore cannot distinguish the two: any cut low enough to
+   catch seed 1's collapse also fires constantly on the seed that is doing fine.
+   (Under the *natural* target the signal is absent altogether — see §4.3.)
 
 **Conclusion: structural, not numerical.** Bounding step *magnitude* is not what the
 natural target provides (272 vs 781). What clipping does **not** touch, and what
