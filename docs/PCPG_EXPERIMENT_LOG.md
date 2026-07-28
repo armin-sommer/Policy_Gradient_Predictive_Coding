@@ -417,8 +417,9 @@ Critic LR moves the mean but not the ±420 spread. Neither beats SGD+natural+mt2
 ### 3.8 5M-scale sweeps
 
 **`benchmark_halfcheetah_pcpg_5m_27runs_20260721`** (9 configs, 27 runs, 5M,
-[256,256], 1024 envs) — *note: `results/overnight_halfcheetah_sota_sweep{,_01}/` are
-empty scaffolding for this same sweep; the data is here.*
+[256,256], 1024 envs). This is the sweep that `scripts/run_pcpg_overnight_sweep.py`
+generates; two empty scaffolding copies (`overnight_halfcheetah_sota_sweep{,_01}/`,
+configs but no logs) were removed since the data lives here.
 
 | config | final | best | collapse |
 |---|---|---|---|
@@ -576,7 +577,7 @@ Each `results/<dir>/<config>/` holds `config.yaml` (exact resolved config),
 | `benchmark_halfcheetah_pcpg_5m_27runs_20260721` | 9 | 27 | 5M |
 | `benchmark_halfcheetah_capacity_5m` | 3 | 9 | 5M |
 | `pcr_sota` | 8 | 24 | 5M |
-| `overnight_halfcheetah_sota_sweep{,_01}` | 9 | **0** | — (empty; data in the 27-run folder) |
+
 
 Every folder with logs has `per_run.csv`, `SUMMARY.md`, `learning_curve.png`,
 `diagnostic_plots.png`, and per-config `collapse_anatomy_<config>.png`.
