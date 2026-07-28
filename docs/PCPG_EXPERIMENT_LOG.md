@@ -73,7 +73,7 @@ Two consequences that matter when reading every table:
 | Adam + natural + mt20 | 425 ± 491 | 1/3 | same target, unstable |
 | Adam Euclidean mt20 (baseline) | 649 ± 644 | 1/3 | higher peak, unreliable |
 | SGD Euclidean mt20 | 279 ± 466 | 2/3 | `kl_max` reaches 5.1 |
-| Adam + global σ (PPO-style) | −599 ± 968 | 2/3 | catastrophic |
+| Adam + global σ (PPO-style) | −599 ± 968 | 2/3 | worst config tested |
 | Adam capacity-matched 5M | best single final **2937** | 2/3 | 2nd-highest final; unreliable |
 | Adam 5M `ts05 lr0002` | best single final **3205** | 2/3 | highest final in the project |
 
@@ -226,18 +226,18 @@ adopting it stabilise PCPG?
 
 | config | final | collapse | kl_max | sat_max |
 |---|---|---|---|---|
-| adam mt10 | −647 ± 548 | **3/3** | 48.9 | 0.86 |
-| adam mt20 | −599 ± 968 | 2/3 | **151.9** | 0.61 |
-| adam mt40 | −524 ± 47 | 1/3 | 169.8 | 0.91 |
-| adam mt80 | −451 ± 84 | 1/3 | 170.2 | 0.73 |
+| adam mt10 stdglobal | −647 ± 548 | **3/3** | 48.9 | 0.86 |
+| adam mt20 stdglobal | −599 ± 968 | 2/3 | **151.9** | 0.61 |
+| adam mt40 stdglobal | −524 ± 47 | 1/3 | 169.8 | 0.91 |
+| adam mt80 stdglobal | −451 ± 84 | 1/3 | 170.2 | 0.73 |
 | sgd (all) | −46 … −0 | 0/3 ⚠ | 0.6–1.0 | 0.06 |
 
 ⚠ **vacuous**: no SGD `stdglobal` seed reached 300 (best ≤ 73). These runs did not learn; the 0/3 is not evidence of stability.
 
-**Finding.** A **state-independent** `log_std` — exactly the parameterisation PPO
-uses successfully here — is **catastrophic for PCPG**: `kl_max` up to 170, saturation
-to 0.91, negative returns. In this implementation PCPG performs dramatically worse
-with a state-independent σ. This is the
+**Finding.** With a **state-independent** `log_std` — the parameterisation PPO uses
+successfully here — every Adam cell ends with a negative mean return (−451 to −647),
+`kl_max` reaches 170 and saturation 0.91. In this implementation PCPG performs
+dramatically worse with a state-independent σ. This is the
 strongest evidence that PCPG's instability is *not* a shared "MuJoCo/tanh" issue: the
 same parameterisation is fine for PPO in this codebase.
 
@@ -502,10 +502,15 @@ degrades, so the collapse is not an artefact of evaluating at `tanh(μ)`.
 
 ### 4.3 Current best signature (correlational only)
 
-Gradient norms carry **no** collapse signal under the natural target — crashing seeds
-have equal or *lower* norms than survivors (0.204→**0.199** while crashing; healthy
-0.264). The strongest empirical correlate observed across all three experiment
-families is:
+Gradient norms carry **no** collapse signal under the natural target. Using the same
+split and windows as the table below: crashing runs sit at 0.186–0.253 (median
+0.197, n=9) and healthy runs at 0.181–0.264 (median **0.197**, n=15) — identical
+medians, fully overlapping ranges. Under the Euclidean target the level is ~5×
+higher and does rise during a collapse (crashing 0.908–1.942, median 1.011, n=7),
+but the 3 healthy runs sit at 1.034–1.040, above most crashing values, so the level
+still does not separate them (§3.6).
+
+The strongest empirical correlate observed across all three experiment families is:
 
 | | `\|μ\|` growth (max during / mean before) | n |
 |---|---|---|
