@@ -17,7 +17,7 @@ is **not yet established** — only a signature.
 
 ---
 
-## 1. The update, and where each knob acts
+## 1. The update, and which config parameter changes each part
 
 ```
 advantage A ─▶ target = μ + ts·A·(z−μ)/σ²  ─▶ PC inference (max_t1 steps) ─▶ weight grad ─▶ optimizer step
@@ -38,7 +38,7 @@ this repo (`NormalTanhDistribution`, `src/networks/distributions.py`).
 | **SGD + natural + mt20** | **781 ± 47** | **0/3** | best stable result at 1M |
 | Adam + natural + mt20 | 425 ± 491 | 1/3 | same target, unstable |
 | Adam Euclidean mt20 (baseline) | 649 ± 644 | 1/3 | higher peak, unreliable |
-| SGD Euclidean mt20 | 279 ± 466 | 2/3 | `1/σ²` is corrosive under SGD |
+| SGD Euclidean mt20 | 279 ± 466 | 2/3 | `kl_max` reaches 5.1 |
 | Adam + global σ (PPO-style) | −599 ± 968 | 2/3 | catastrophic |
 | Adam capacity-matched 5M | up to **2937** | 2/3 | best peak ever seen; unreliable |
 
@@ -68,9 +68,18 @@ adaptive rescaling masks this (`kl_max` ≈ 0.4). (c) Adam has positive value-EV
 SGD strongly negative: two different critic regimes. (d) **PC-REINFORCE without a
 critic does not learn at bench scale** (finals 8–66) — the value head is essential.
 
-### 3.2 `trust_region_kl_clip` — gradient clipping (9 configs, 26 runs)
+### 3.2 `trust_region_kl_clip` — clip the policy gradient (9 configs, 26 runs)
 
-*Question: does `max_grad_norm` stabilise?*
+**Changed:** `train.max_grad_norm`: `null` → `1.0` (and `0.5` in one cell).
+
+**Where it acts:** `src/pc_algorithms/pc_actor_critic.py:194-196`. The policy
+optimizer is wrapped as
+`optax.chain(optax.clip_by_global_norm(c), sgd_or_adam(lr))`, so before every
+policy weight update the whole gradient vector `g` is rescaled by
+`min(1, c/‖g‖₂)`. The critic optimizer is untouched.
+
+**Question:** if collapses are caused by occasional huge weight updates, does
+bounding `‖g‖` prevent them?
 
 | config | final | collapse | vs baseline |
 |---|---|---|---|
@@ -92,7 +101,25 @@ was above the gradient distribution.**
 They died of the learning rate, not the clipping. This invalidated the sweep and
 motivated §3.6.
 
-### 3.3 `trust_region_kl_tclip` — output-space target clip (6 configs, 18 runs)
+### 3.3 `trust_region_kl_tclip` — cap how far the target moves the mean (6 configs, 18 runs)
+
+**Changed:** `train.target_clip`: `null` → `2.0` / `5.0`.
+
+**Where it acts:** `src/pc_algorithms/gaussian_policy.py:82-85`. The PC target for
+the Gaussian mean is `target_μ = μ + offset`, where
+`offset = ts·A·(z−μ)/σ²`. With this set, the offset is clamped per coordinate
+*before* the target is formed:
+
+```
+offset ← clip(offset, −2, +2)      # then target_μ = μ + offset
+```
+
+So it bounds the distance the target can pull the mean in one update, in raw
+action-space units. It does not touch gradients or the optimizer, so it is
+optimizer-independent — unlike §3.2.
+
+**Question:** if the collapse comes from the target demanding too large a move,
+does capping that move prevent it?
 
 | config | final | best | collapse |
 |---|---|---|---|
@@ -105,7 +132,19 @@ motivated §3.6.
 scale) but **never removes the collapse** — 1/3 in every cell. An output-space bound
 is not the missing constraint.
 
-### 3.4 `trust_region_kl_stdglobal` — PPO-style global σ (8 configs, 24 runs)
+### 3.4 `trust_region_kl_stdglobal` — one shared σ instead of a per-state σ (8 configs, 24 runs)
+
+**Changed:** `agent.state_indep_std`: `false` → `true`.
+
+**Where it acts:** `src/pc_algorithms/pc_actor_critic.py:210-218` (`_with_global_std`).
+Normally the network outputs `[μ(s), log σ(s)]` — σ depends on the state. With this
+flag, the network's `log σ(s)` output is discarded and replaced by a **single global
+`log σ` vector** shared across all states. That vector is updated separately by the
+batch-averaged Gaussian score (`pc_actor_critic.py:369-374`), which is the same
+signal PPO's state-independent `log_std` parameter receives.
+
+**Question:** PPO on MuJoCo uses exactly this parameterisation and is stable. Does
+adopting it stabilise PCPG?
 
 | config | final | collapse | kl_max | sat_max |
 |---|---|---|---|---|
@@ -117,13 +156,36 @@ is not the missing constraint.
 
 **Finding.** A **state-independent** `log_std` — exactly the parameterisation PPO
 uses successfully here — is **catastrophic for PCPG**: `kl_max` up to 170, saturation
-to 0.91, negative returns. The per-state σ head is load-bearing. This is the
+to 0.91, negative returns. PCPG requires the per-state σ head. This is the
 strongest evidence that PCPG's instability is *not* a shared "MuJoCo/tanh" issue: the
 same parameterisation is fine for PPO in this codebase.
 
-### 3.5 `trust_region_kl_natural` — the natural target ⭐ (4 configs, 12 runs)
+### 3.5 `trust_region_kl_natural` — remove the `1/σ²` factor from the target ⭐ (4 configs, 12 runs)
 
-*Question: does dropping the `1/σ²` amplifier (Fisher-preconditioned target) fix it?*
+**Changed:** `train.natural_target`: `false` → `true`.
+
+**Where it acts:** `src/pc_algorithms/gaussian_policy.py:79-81`. The default
+(Euclidean) target offsets are
+
+```
+mean:    offset_μ    = ts·A·(z−μ)/σ²
+log_std: offset_logσ = ts·A·((z−μ)²/σ² − 1)
+```
+
+With the flag on, each is multiplied by the inverse Gaussian Fisher information —
+`σ²` for the mean channel, `½` for the log-σ channel:
+
+```
+offset_μ    ← offset_μ · σ²  =  ts·A·(z−μ)      # the 1/σ² factor cancels
+offset_logσ ← offset_logσ · 0.5
+```
+
+The `1/σ²` factor is the amplifier: as σ shrinks toward its floor (0.135), it
+multiplies the target offset by up to ~55×. Removing it makes the target the
+natural-gradient direction the theory predicts.
+
+**Question:** does removing that amplifier fix the instability at its source, rather
+than clipping its consequences (§3.2, §3.3)?
 
 | config | final | best | AUC | collapse | kl_max |
 |---|---|---|---|---|---|
@@ -132,7 +194,7 @@ same parameterisation is fine for PPO in this codebase.
 | adam mt20 nat | 425 ± 491 | 753 ± 28 | 284 ± 116 | 1/3 | 0.30 |
 | adam mt80 nat | 369 ± 480 | 812 ± 116 | 341 ± 118 | 1/3 | 0.30 |
 
-Seeds for the winner: **759 / 738 / 846** — unusually tight for this project.
+Per-seed finals: **759 / 738 / 846** — unusually tight for this project.
 
 **Finding.** The natural target is the only strategy that produces a clean 3-seed
 result — **but only under SGD**. Same target under Adam still spikes to `kl_max` 0.30
@@ -141,10 +203,21 @@ property of the target alone. `mt80` adds seed variance without benefit.
 
 ![natural target](../results/trust_region_kl_natural/collapse_anatomy_sgd_tanh_ts10_bench_lr003_mt20_nat.png)
 
-### 3.6 `gradclip_probe` — Marco's check, done properly (4 configs, 10 runs)
+### 3.6 `gradclip_probe` — redo §3.2 without the learning-rate confound (4 configs, 10 runs)
 
-*Question: are the collapses rare numerical gradient spikes that a guard would catch?
-Run on the **Euclidean** update so `1/σ²` is retained.*
+**Changed:** `train.max_grad_norm`: `null` → `10.24` / `4.39` / `1.46`, on
+`halfcheetah_pc_actor_critic_sgd_tanh_ts10_bench_lr003_mt20` — i.e. **SGD at the
+working `lr=0.03`**, `natural_target` left `false` so the `1/σ²` factor is retained.
+Same code path as §3.2 (`pc_actor_critic.py:194-196`).
+
+**Why these three values:** §3.2 guessed `1.0`, which turned out to be above the
+gradient distribution and never fired. Here a first run with clipping off measured
+the actual distribution of `‖g‖` (new logging: `diag/policy_grad_norm_p50/p90/p99/p999`
+and `diag/policy_grad_norm_bind_rate`, `pc_actor_critic.py:412-425`), and the three
+thresholds were set at its p99.9, p99 and p99/3 so that each fires at a known rate.
+
+**Question:** are the collapses caused by rare large gradients — which a threshold
+placed in the measured tail would catch?
 
 Measured tail (clip-free): **p50 0.671, p90 0.941, p99 4.387, p99.9 10.24** → tail
 ratio **6.5×**. A real heavy tail exists, as Marco predicted.
@@ -156,11 +229,12 @@ ratio **6.5×**. A real heavy tail exists, as Marco predicted.
 | 4.39 (p99) | 0.47% | 3.49 / 2.48 / 0.31 | 280 ± 503 | 2/3 |
 | 1.46 (p99/3) | **1.56%** | **0.46 / 0.53 / 0.37** | 272 ± 475 | 1/3 |
 
-**Finding.** The guard **worked and was not enough.** At clip 1.46 it fired on 1.56%
-of updates and cut `kl_max` from 6–12 to ~0.4 — a >10× reduction in realised step
-size — and returns did not move (267 → 294 → 280 → 272). Per-seed, outcome is fixed
-by seed identity, not clip: seed 2 collapses under every clip (−285/−371/−257), seed
-3 is fine under every clip (855/855/895).
+**Finding.** The clip fired and did not prevent the collapse. At `max_grad_norm=1.46`
+it clipped 1.56% of all policy updates and reduced `kl_max` from 6–12 to ~0.4 — so the
+realised policy step per update dropped more than 10× — and the returns did not change
+(267 → 294 → 280 → 272). Per seed, the outcome is determined by the seed, not the clip
+value: seed 2 collapses at all three thresholds (−285 / −371 / −257) and seed 3 does
+not collapse at any (855 / 855 / 895).
 
 **Conclusion: structural, not numerical.** Bounding step *magnitude* is not what the
 natural target provides (272 vs 781). Not ruled out: gradient *direction*, Adam
@@ -168,9 +242,30 @@ preconditioning, per-parameter spikes, sample-level gradients.
 
 ![gradclip](../results/gradclip_probe/collapse_anatomy_sgd_euclid_mt20_lr003_clip1p4623.png)
 
-### 3.7 `knob_fill_smin_vlr` — the two rescue knobs (4 configs, 12 runs)
+### 3.7 `knob_fill_smin_vlr` — raise the σ floor; change the critic's learning rate (4 configs, 12 runs)
 
-| knob | value | final | best | collapse |
+Two independent changes, each aimed at one of the two observed failure patterns.
+
+**(a) `agent.log_std_min`: `−2.0` (default) → `−1.5` / `−1.0`**, applied to the
+collapsing `adam ... mt20_nat` config.
+*Where it acts:* `pc_actor_critic.py:142-143` overwrites the module constant
+`gaussian_policy.LOG_STD_MIN`, which clamps `log σ` in two places — when sampling
+(`gaussian_policy.py:28`) and when forming the target (`gaussian_policy.py:86-87`).
+Effect: the smallest allowed policy standard deviation rises from
+`exp(−2) = 0.135` to `exp(−1.5) = 0.223` or `exp(−1) = 0.368`. This both preserves
+exploration and caps the `1/σ²` amplifier.
+*Question:* the Adam collapses coincide with rising tanh saturation and shrinking σ —
+does forbidding σ from getting small prevent them?
+
+**(b) `train.value_learning_rate`: `3e-4` → `1e-4` / `1e-3`**, applied to the
+degrading `sgd ... mt80_nat` config.
+*Where it acts:* `pc_actor_critic.py:198` — the critic's optimizer only
+(`value_optim = make_optim(Config.value_learning_rate)`). The actor's
+`train.learning_rate` is unchanged at `0.03`.
+*Question:* the SGD degradations coincide with `value_explained_var` diverging to
+≈ −3 — is that controllable by changing how fast the critic fits?
+
+| change | value | final | best | collapse |
 |---|---|---|---|---|
 | `log_std_min` (Adam nat mt20) | −2 (base) | 425 ± 491 | 753 | 1/3 |
 | | −1.5 | 514 ± 576 | 866 | 1/3 |
@@ -219,7 +314,7 @@ Confirms §3.1: no critic ⇒ high ceiling, no floor.
 |---|---|---|
 | SGD+natural+mt20 is 0-collapse at 1M | seeds 759/738/846 | **holds (n=3)** |
 | Natural target alone doesn't stabilise | Adam+nat still 1/3, kl_max 0.30 | **holds** |
-| Gradient clipping doesn't rescue | 1.56% bind, kl 6→0.4, returns flat | **holds** |
+| Clipping `‖g‖` does not prevent collapse | 1.56% of updates clipped, kl_max 6→0.4, returns flat | **holds** |
 | Adam clip1.0 was a no-op in 2 cells | bit-identical finals | **[verified]** |
 | Old SGD clip runs are invalid | `lr=0.0003` vs `0.03` in config.yaml | **[verified]** |
 | Global σ is catastrophic | −599, kl_max 152 | **holds** |
@@ -270,7 +365,7 @@ cause, symptom, or bystander.
    updates — moderate but aligned gradients would produce exactly the observed slow
    monotone drift), Adam's preconditioned update norm `‖m̂/(√v̂+ε)‖` vs `‖g‖`,
    per-layer/per-head decomposition.
-3. **Whether the winner survives 5M.** §3.8 says probably not as-is (SGD lr=0.03
+3. **Whether SGD+natural+mt20 survives 5M.** §3.8 suggests not as-is (SGD lr=0.03
    collapses 3/3 at 5M).
 4. **Statistical power.** Every cell is n=3.
 
