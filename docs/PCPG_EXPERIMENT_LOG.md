@@ -112,32 +112,47 @@ Timing over every collapsing run (peak-to-trough eval drop > 400): **17** in
 `knob_fill_smin_vlr` (natural). Collapse onset = the eval peak before the fall.
 
 **Measure.** For each diagnostic, the step at which its smoothed series first crosses
-the **midpoint of its own p10–p90 range**. This is threshold-free, does not depend on
-where the series minimum falls, and uses reflect-padded smoothing so the series edges
-are not dragged toward zero. Negative = moved *before* the return started falling.
+the **midpoint of its own p10–p90 range**. Where a diagnostic is logged both as a
+batch `_max` and a batch `_mean`, both are reported — the `_max` is an extreme over
+~2048 probe observations × action dims, so it can move for reasons the typical update
+does not.
+
+The measure is threshold-free, does not depend on where the series minimum falls, and
+uses reflect-padded smoothing so the series edges are not dragged toward zero.
+Negative = moved *before* the return started falling.
 
 | signal | Euclidean median | before onset | natural median | before onset |
 |---|---|---|---|---|
-| **`mu_target_mag`** | **−57k** | **14/17** | **−442k** | **12/12** |
+| **`mu_target_mag_max`** | −57k | 14/17 | **−442k** | **12/12** |
+| **`mu_target_mag_mean`** | −90k | 13/17 | **−442k** | **12/12** |
 | `pretanh_sat` | +16k | 8/17 | −401k | 11/12 |
-| `policy_drift` | −16k | 9/17 | −70k | 9/12 |
+| `policy_drift_max` | −16k | 9/17 | −70k | 9/12 |
+| `policy_drift_mean` | −41k | 10/17 | −66k | 9/12 |
+| **`kl_mean`** | **−164k** | **11/17** | −82k | 7/12 |
 | `kl_max` | +106k | 7/17 | −29k | 6/12 |
 | `\|μ\|` | +139k | 4/17 | +53k | 2/12 |
 
-**`mu_target_mag` is the only signal that leads in both families** — the raw size of
-the offset the PC target asks for, ahead of the return turning in 14/17 Euclidean and
-**12/12** natural runs.
+Evals are 81.9k steps apart, so divide any lead by ~82k to read it in eval points.
 
-⚠ **The two leads are not equally meaningful.** Evals are 81.9k steps apart, so the
-Euclidean median lead of 57k is **0.7 eval points** — *below the resolution of the
-eval curve*, and not a usable warning. The natural-target lead of 442k is **5.4 eval
-points**, unanimous across 12 runs, and is the only result here with real lead time.
+**Under the natural target, `mu_target_mag` is a genuine early warning.** It leads in
+**12/12** runs by a median **442k steps (5.4 eval points)** — and the `_mean` and
+`_max` variants give the *identical* result, so this is the whole distribution of
+target offsets shifting, not one outlier sample in the batch. This is the only signal
+in the table with both unanimity and a lead well above the eval sampling resolution.
 
-**KL does not lead in either family.** Euclidean 7/17 (median *+106k*, i.e. it
-typically moves after the fall begins), natural 6/12 — a coin flip. Separately, the
-`kl_max` *peak* lags onset in 16/17 Euclidean and 10/12 natural runs. Nothing here
-supports a KL spike as the trigger; this is the second independent family agreeing
-with the retraction in §4.1.
+⚠ **The Euclidean column is much weaker than it looks.** Its best `mu_target_mag`
+lead is 57k–90k, i.e. **0.7–1.1 eval points** — around the spacing of the eval curve
+itself, so barely resolvable. In that family the most consistent precursor is
+actually **`kl_mean`** (11/17, median −164k ≈ 2.0 eval points), not the target
+magnitude.
+
+**On KL, the max and the mean disagree — and only the max supports §4.1.**
+`kl_max` does not lead (7/17 Euclidean, 6/12 natural) and its *peak* lags onset in
+**16/17** and **10/12** — so a KL *spike* is still not the trigger, and this remains a
+second family agreeing with the §4.1 retraction. But `kl_mean` does lead in the
+Euclidean family (11/17, −164k), so "KL carries no early information" would be too
+strong: the *typical* per-update policy change drifts up beforehand, while the
+*worst* one arrives too late to be causal.
 
 **`|μ|` growth lags in both** (4/17, 2/12), which is worth holding against §4.3: `|μ|`
 separates crashing from healthy runs by *magnitude*, but it is not an early warning —
@@ -508,18 +523,18 @@ that same run. Confirms §3.1: no critic ⇒ high ceiling, no floor.
 
 ## 4. Verified claims and their evidence
 
-| claim | evidence | status |
-|---|---|---|
-| SGD+natural+mt20 is 0-collapse at 1M | seeds 759/738/846 | **holds (n=3)** |
-| Natural target alone doesn't stabilise | Adam+nat still 1/3, kl_max 0.30 | **holds** |
-| Clipping `‖g‖` does not prevent collapse | 1.56% of updates clipped, kl_max 6→0.4, returns flat | **holds** |
-| Adam clip1.0 was a no-op in 2 cells | bit-identical finals | **[verified]** |
-| Old SGD clip runs are invalid | `lr=0.0003` vs `0.03` in config.yaml | **[verified]** |
-| Global σ destroys Adam runs | −599 ± 968, kl_max 152, 2/3 collapse | **holds** |
-| Global σ "kills SGD" | SGD rows never reached viability; cannot separate "σ broke it" from "never learned" | **ambiguous** |
-| Transformation matches PPO | same `NormalTanhDistribution`; Jacobian in `log_prob`; no `μ,σ` dependence in tanh correction | **holds (code)** |
-| ~~KL shock causes the collapse~~ | see §4.1 | **RETRACTED** |
-| Deterministic-eval explains it | see §4.2 | **REFUTED** |
+| claim                                    | evidence                                                                                      | status           |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------- | ---------------- |
+| SGD+natural+mt20 is 0-collapse at 1M     | seeds 759/738/846                                                                             | **holds (n=3)**  |
+| Natural target alone doesn't stabilise   | Adam+nat still 1/3, kl_max 0.30                                                               | **holds**        |
+| Clipping `‖g‖` does not prevent collapse | 1.56% of updates clipped, kl_max 6→0.4, returns flat                                          | **holds**        |
+| Adam clip1.0 was a no-op in 2 cells      | bit-identical finals                                                                          | **[verified]**   |
+| Old SGD clip runs are invalid            | `lr=0.0003` vs `0.03` in config.yaml                                                          | **[verified]**   |
+| Global σ destroys Adam runs              | −599 ± 968, kl_max 152, 2/3 collapse                                                          | **holds**        |
+| Global σ "kills SGD"                     | SGD rows never reached viability; cannot separate "σ broke it" from "never learned"           | **ambiguous**    |
+| Transformation matches PPO               | same `NormalTanhDistribution`; Jacobian in `log_prob`; no `μ,σ` dependence in tanh correction | **holds (code)** |
+| ~~KL shock causes the collapse~~         | see §4.1                                                                                      | **RETRACTED**    |
+| Deterministic-eval explains it           | see §4.2                                                                                      | **REFUTED**      |
 
 ### 4.1 Retracted: "a shared KL shock knocks the run over"
 
