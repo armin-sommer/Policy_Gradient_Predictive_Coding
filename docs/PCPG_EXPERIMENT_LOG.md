@@ -12,7 +12,10 @@ steps, 3 seeds): PPO best-per-seed **1759 / 4360 / 2590** (mean 2903); TRPO
 
 **Status in one line:** the tightest 3-seed result to date is
 `SGD + natural target + max_t1=20` (**781 ± 47**, 0/3 collapse); four other
-stabilisation strategies were tested and did not remove the collapses.
+stabilisation strategies were tested and did not remove the collapses; and under the
+natural target there is now an **early-warning signal** — `mu_target_mag` starts
+climbing a median **440k steps (≈5 eval points) before the return falls, in 12/12
+collapsing runs** (§3.1a). The *cause* of the collapses is still not established.
 
 *(Note: it is not the only 0-collapse config — `adam mt80` (§3.1),
 `adam mt10 clip1.0` and `adam mt80 clip1.0` (§3.2) are also 0/3 with all seeds
@@ -533,7 +536,10 @@ that same run. Confirms §3.1: no critic ⇒ high ceiling, no floor.
 | Global σ destroys Adam runs              | −599 ± 968, kl_max 152, 2/3 collapse                                                          | **holds**        |
 | Global σ "kills SGD"                     | SGD rows never reached viability; cannot separate "σ broke it" from "never learned"           | **ambiguous**    |
 | Transformation matches PPO               | same `NormalTanhDistribution`; Jacobian in `log_prob`; no `μ,σ` dependence in tanh correction | **holds (code)** |
-| ~~KL shock causes the collapse~~         | see §4.1                                                                                      | **RETRACTED**    |
+| `mu_target_mag` warns early (natural target) | leads in **12/12** collapsing runs, median −442k (≈5.4 eval pts); `_mean` and `_max` identical, so not a batch outlier (§3.1a) | **holds (n=12)** |
+| No usable early warning under the Euclidean target | best lead 0.7–2.0 eval points, at/below eval sampling resolution (§3.1a)         | **holds**        |
+| `\|μ\|` growth is an early warning       | **lags** onset in both families (4/17, 2/12) — it separates by magnitude but does not predict (§3.1a vs §4.3) | **REFUTED**      |
+| ~~KL shock causes the collapse~~         | see §4.1; §3.1a adds a second family — `kl_max` peak lags onset in 16/17 and 10/12            | **RETRACTED**    |
 | Deterministic-eval explains it           | see §4.2                                                                                      | **REFUTED**      |
 
 ### 4.1 Retracted: "a shared KL shock knocks the run over"
@@ -549,6 +555,12 @@ eval peaks 491k, troughs 737k, `kl_max` at **778k** — after the decline had al
 completed. And in that config the seed with the **largest** spike (seed 2, 0.150)
 **survived at 859**, while the crashing seed 3 had the **smallest** (0.108). The data
 do not support the KL spike as the primary cause.
+
+**Independently confirmed in §3.1a** on a different set of runs: the `kl_max` *peak*
+lags collapse onset in **16/17** Euclidean and **10/12** natural runs. Note the
+refinement there — `kl_mean` (the typical per-update change) *does* drift up
+beforehand in the Euclidean family, so the retraction is specifically of the *spike*
+as trigger, not of KL carrying any information.
 
 ### 4.2 Refuted: "stochasticity protects training; only deterministic eval collapses"
 
@@ -589,6 +601,10 @@ the same runs used to choose it.
 ⚠ **Pooling caveat.** These runs come from three families (Adam+natural,
 SGD+natural, SGD+Euclidean) with different optimizers, targets and σ floors.
 
+⚠ **And it is not an early warning.** §3.1a shows `|μ|` *lags* collapse onset in both
+families (before onset in only 4/17 and 2/12 runs). It separates crashing from healthy
+runs by magnitude after the fact; it does not predict.
+
 **This is a signature, not a cause.** Saturation *level* does not discriminate —
 healthy `sminm10` seed 1 runs at 0.116 saturation and scores 911, *higher* than
 crashing seed 3's 0.099. Only the *growth* separates them, imperfectly, and `|μ|`
@@ -598,6 +614,11 @@ growth could be cause, symptom, or bystander.
 
 ## 5. What is not established
 
+0. **What `mu_target_mag` actually is.** §3.1a establishes it as the earliest
+   *observable*, not as the cause: target magnitude, drift and KL are algebraically
+   linked (the offset *is* `ts·A·(z−μ)/σ²`), so moving first may just mean it is the
+   most sensitive detector of a shift happening upstream. The frozen-checkpoint test
+   below is what would separate these.
 1. **Causality of `|μ|` growth.** Needs the frozen-checkpoint intervention:
    evaluate a collapsed checkpoint under `tanh(clip(μ,−b,b))`. If return recovers,
    μ-magnitude is functionally responsible; if not, it is downstream.
