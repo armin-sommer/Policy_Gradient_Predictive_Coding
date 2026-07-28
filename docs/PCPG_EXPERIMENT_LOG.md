@@ -35,7 +35,7 @@ this repo (`NormalTanhDistribution`, `src/networks/distributions.py`)
 | Adam Euclidean mt20 (baseline) | 649 ± 644 | 1/3 | higher peak, unreliable |
 | SGD Euclidean mt20 | 279 ± 466 | 2/3 | `kl_max` reaches 5.1 |
 | Adam + global σ (PPO-style) | −599 ± 968 | 2/3 | catastrophic |
-| Adam capacity-matched 5M | up to **2937** | 2/3 | best peak ever seen; unreliable |
+| Adam capacity-matched 5M | best single final **2937** | 2/3 | highest final seen; unreliable |
 
 ---
 
@@ -55,13 +55,15 @@ this repo (`NormalTanhDistribution`, `src/networks/distributions.py`)
 | sgd mt20 | 279 ± 466 | 2/3 | 5.15 | −0.75 |
 | sgd mt40 | −62 ± 535 | 1/3 | **58.5** | −0.59 |
 | sgd mt80 | −99 ± 405 | 2/3 | **295.8** | −0.71 |
-| pc_reinforce (all 8) | 8–66 | 0/3 | 0.04–0.08 | n/a |
+| pc_reinforce (all 8) | 8–66 (config means) | 0/3 | 0.04–0.08 | n/a |
 
 **Findings.** (a) The Euclidean `1/σ²` target under SGD produces extremely large
 policy updates — `kl_max` up to **296** — and gets worse with more inference. (b) Adam's
 adaptive rescaling masks this (`kl_max` ≈ 0.4). (c) Adam has positive value-EV,
 SGD strongly negative: two different critic regimes. (d) **PC-REINFORCE without a
-critic does not learn at bench scale** (finals 8–66) — the value head is essential.
+critic barely learns at bench scale**: config-mean finals are 8–66 and individual
+seeds span −29 to 230, against 1141 for the best actor-critic seed. The value head is
+what makes PCPG work at this scale.
 
 ![baseline sweep](../results/trust_region_kl/learning_curve.png)
 *§3.1 all 16 baseline configs.*
@@ -105,10 +107,11 @@ bounding `‖g‖` prevent them?
 | sgd mt10–80 clip1.0 | **−11 ± 2** | 0/3 | **fails to learn** |
 
 **[verified]** Adam mt20 and mt40 with `clip=1.0` produce **bit-identical finals** to
-no-clip (`[1121, 1088, −261]` and `[675, 870, −374]`) — the clip *never fired*,
-because gradient norms sit at ~0.2–0.4. Earlier I attributed this to Adam
-renormalising the clip away; the real reason is simpler and stronger: **the threshold
-was above the gradient distribution.**
+no-clip (`[1121, 1088, −261]` and `[675, 870, −374]`). Checking the logs directly:
+per-update `policy_grad_norm_max` in these runs has median 0.61 and peaks at
+0.88–0.95, and **0.00% of updates in any seed exceeded 1.0** — the clip never fired
+once. Earlier I attributed this to Adam renormalising the clip away; the real reason
+is simpler: **the threshold sat above the entire gradient distribution.**
 
 > **Two clipping experiments, read them together.** §3.2 (here) is the flawed first
 > attempt: the threshold `1.0` was guessed, and it sat *above* the gradient
@@ -152,9 +155,12 @@ does capping that move prevent it?
 | adam mt40 tclip2 | 705 ± 664 | 1069 | 1/3 |
 | adam mt80 tclip2 | 781 ± 547 | 1039 | 1/3 |
 
-**Finding.** Capping the target offset **raises peaks** (up to 1069, the best at bench
-scale) but **never removes the collapse** — 1/3 in every cell. A bound in action space
-is not the missing constraint.
+**Finding.** Capping the target offset **raises peaks** — mean-of-best reaches 1069
+(mt40 tclip2) and the single highest run in this sweep is 1341 (mt80 tclip2 seed 2),
+above the 1121 maximum of the unclipped baseline — but it **never removes the
+collapse**: 1/3 in every cell. A bound in action space is not the missing constraint.
+(These are not the highest returns seen at bench scale overall: `stdglobal` mt10
+seed 2 peaked at 2859 before collapsing 3/3, §3.4.)
 
 ![target clip](../results/trust_region_kl_tclip/learning_curve.png)
 *§3.3 target clip: higher peaks, one collapsing seed per cell.*
@@ -223,9 +229,9 @@ source, rather than clipping its consequences (§3.2, §3.3)?
 | config | final | best | AUC | collapse | kl_max |
 |---|---|---|---|---|---|
 | **sgd mt20 nat** | **781 ± 47** | 862 ± 52 | **441 ± 18** | **0/3** | **0.04** |
-| sgd mt80 nat | 357 ± 433 | 802 ± 114 | 384 ± 71 | 0/3 | 0.04 |
+| sgd mt80 nat | 357 ± 433 | 802 ± 114 | 384 ± 71 | 0/3 | 0.06 |
 | adam mt20 nat | 425 ± 491 | 753 ± 28 | 284 ± 116 | 1/3 | 0.30 |
-| adam mt80 nat | 369 ± 480 | 812 ± 116 | 341 ± 118 | 1/3 | 0.30 |
+| adam mt80 nat | 369 ± 480 | 812 ± 116 | 341 ± 118 | 1/3 | 0.32 |
 
 Per-seed finals: **759 / 738 / 846** — unusually tight for this project.
 
@@ -280,13 +286,14 @@ over-long gradients — and that was verifiably enough to bring the realised pol
 down to natural-target levels (`kl_max` ~0.4, vs 0.04 for the natural target and 6–12
 unclipped). The returns did not follow. Two reasons are consistent with the data:
 
-1. **The collapse is gradual, not a single bad update.** In the collapsing runs the
-   eval return declines over ~250–500k steps while per-update KL stays small
-   (0.008–0.036 in the `sminm10` seed-3 window, §4.1). There is no single oversized
-   update for a clip to intercept — there is a long sequence of ordinary-sized ones
-   moving the policy in a consistent direction. A global-norm clip shortens each step
-   but does not change its direction, so it slows the walk without changing where it
-   goes.
+1. **The collapse is gradual, not a single bad update.** In these runs at
+   `clip=1.46`, seed 1's decline spans 245k→737k (491k steps) with per-update
+   `kl_max` median 0.117 (p90 0.247, max 0.455); seed 2's spans 737k→819k (81k steps)
+   with median 0.197 (max 0.347). So the policy change per update stays modest
+   throughout — there is no single oversized update for a clip to intercept, just a
+   long sequence of ordinary-sized ones moving the policy consistently in one
+   direction. A global-norm clip shortens each step but does not change its
+   direction, so it slows the walk without changing where it leads.
 2. **The gradient norm does not separate collapsing from healthy runs.** In these
    Euclidean runs the norm does roughly double during a collapse (seed 1
    0.552 → 1.005; seed 2 0.750 → 1.942), so Marco's mechanism is visible. But the
@@ -340,7 +347,8 @@ degrading `sgd ... mt80_nat` config.
 | | 1e-3 | 496 ± 419 | 674 | 0/3 |
 
 **Finding.** Both negative for stability. The σ floor lifts peaks (753→893) and is
-demonstrably active (`log_std_mean` −0.28 vs −0.79 baseline) yet collapse stays 1/3.
+demonstrably active — final `log_std_mean` is −0.28 at floor −1.0 and −0.55 at floor
+−1.5, versus −0.84 in the floor −2.0 baseline — yet collapse stays 1/3.
 Critic LR moves the mean but not the ±420 spread. Neither beats SGD+natural+mt20.
 
 ![knob fill](../results/knob_fill_smin_vlr/learning_curve.png)
@@ -355,6 +363,7 @@ empty scaffolding for this same sweep; the data is here.*
 
 | config | final | best | collapse |
 |---|---|---|---|
+| adam ts04 | **1424 ± 889** | 1953 | 2/3 |
 | adam ts05 lr0002 | 1349 ± 1537 | 1821 | 2/3 |
 | adam ts07 lr0002 | 1313 ± 784 | 1560 | 3/3 |
 | adam ts07 lr0001 | 1097 ± 500 | 1442 | 2/3 |
@@ -372,16 +381,15 @@ reliability. Critically, **SGD at lr=0.03 — the bench winner's LR — collapse
 5M**, so the §3.5 recipe is *not* safe to promote unchanged. Lower LR (0.01) is
 0/3 but weak.
 
-**`pcr_sota`** (PC-REINFORCE, 8 configs, 24 runs, 5M): peaks to **2139** then
-catastrophic collapse — finals ≈ −500 to −600 on most seeds, saturation to **1.000**.
-Confirms §3.1: no critic ⇒ high ceiling, no floor.
+**`pcr_sota`** (PC-REINFORCE, 8 configs, 24 runs, 5M): the single highest peak in
+this whole project — **3522** (ts06 seed 2) — followed by catastrophic collapse:
+finals ≈ −500 to −600 on most seeds, with pre-tanh saturation reaching **1.000** on
+that same run. Confirms §3.1: no critic ⇒ high ceiling, no floor.
 
 ![5M sweep](../results/benchmark_halfcheetah_pcpg_5m_27runs_20260721/learning_curve.png)
 *§3.8 5M capacity-matched: higher peaks, collapses persist.*
 
 ---
-
-## 4. Verified claims---
 
 ## 4. Verified claims and their evidence
 
