@@ -2,13 +2,25 @@
 
 **Context.** PCPG = predictive-coding policy gradient. The theoretical claim is that
 the PC weight update approximates a *natural gradient* at inference convergence. The
-empirical goal on HalfCheetah is not to beat PPO (PPO ≈ 4.4k @ 1M, PCPG ≈ 0.9k) but
-to get the continuous-control update **reliable across seeds**.
+empirical goal on HalfCheetah is not to beat PPO but to get the continuous-control
+update **reliable across seeds**.
 
-**Status in one line:** we have the first 0-collapse 3-seed result
-(`SGD + natural target + max_t1=20`, **781 ± 47**), we know four stabilisation
-strategies that *don't* work and why, and the mechanism of the remaining collapses
-is **not yet established**.
+*Matched baselines in this repo* (`results/mujoco/`, same [64,64] net, 256 envs, 1M
+steps, 3 seeds): PPO best-per-seed **1759 / 4360 / 2590** (mean 2903); TRPO
+**1276 / 1408 / 1330** (mean 1338). Best PCPG at that budget: mean best **862**
+(§3.5). So PCPG is ~3× below PPO and ~1.5× below TRPO on matched settings. (A "PPO
+≈ 4.4k" figure quoted earlier was PPO's *best single seed peak*, not a typical
+value.)
+
+**Status in one line:** the tightest 3-seed result to date is
+`SGD + natural target + max_t1=20` (**781 ± 47**, 0/3 collapse); four other
+stabilisation strategies were tested and did not remove the collapses; the mechanism
+of the remaining collapses is **not yet established**.
+
+*(Note: it is not the only 0-collapse config — `adam mt80` (§3.1),
+`adam mt10 clip1.0` and `adam mt80 clip1.0` (§3.2) are also 0/3 with all seeds
+viable. What distinguishes SGD+natural+mt20 is the seed spread: std 47 versus
+441 / 161 / 91.)*
 
 ---
 
@@ -26,6 +38,33 @@ this repo (`NormalTanhDistribution`, `src/networks/distributions.py`)
 
 ---
 
+## 1b. Metric definitions (read before the tables)
+
+All from `scripts/analyze_pcpg_logs.py`.
+
+| metric | definition | trap |
+|---|---|---|
+| `final` | last eval score | — |
+| `best` | max eval score over the run | — |
+| `AUC` | *time-averaged* return: trapezoid area ÷ step span. Not a raw area. | comparable only within equal step budgets |
+| `kl_max` | max over the run of the per-update `diag/policy_kl_max` | max-of-max; one bad update sets it |
+| `± value` | **population** std (`np.std`, ddof=0) over seeds, n=3 | understates sample sd by ×1.22; **not** a standard error |
+| `collapse` | run first reaches **VIABILITY = 300**, then sits below 30% of its running best for **3 consecutive** evals | **a run that never reaches 300 can never be flagged collapsed** |
+| `severe_collapse` | best ≥ 300 **and** final < 0 | reported in `per_run.csv`, *not* in the tables below |
+
+Two consequences that matter when reading every table:
+
+1. **`0/3` is vacuous where no seed reached 300.** This applies to all
+   `pc_reinforce` bench rows (§3.1), all SGD `clip1.0` rows (§3.2), all SGD
+   `stdglobal` rows (§3.4), and partially to the 5M SGD rows (§3.8). In those cells
+   `0/3` means "never got good enough to collapse", not "stable".
+2. **`collapse = 0` does not mean no degradation.** Nine runs have
+   `collapse = 0` but `severe_collapse = 1` (peaked ≥300, ended <0) — the rule needs
+   3 *consecutive* sub-threshold evals, so a late fall can miss it. Flagged inline
+   where it occurs.
+
+---
+
 ## 2. Overview of all runs
 
 | recipe | final | collapse | note |
@@ -35,7 +74,8 @@ this repo (`NormalTanhDistribution`, `src/networks/distributions.py`)
 | Adam Euclidean mt20 (baseline) | 649 ± 644 | 1/3 | higher peak, unreliable |
 | SGD Euclidean mt20 | 279 ± 466 | 2/3 | `kl_max` reaches 5.1 |
 | Adam + global σ (PPO-style) | −599 ± 968 | 2/3 | catastrophic |
-| Adam capacity-matched 5M | best single final **2937** | 2/3 | highest final seen; unreliable |
+| Adam capacity-matched 5M | best single final **2937** | 2/3 | 2nd-highest final; unreliable |
+| Adam 5M `ts04`/`ts05 lr0002` | best single final **3205** | 2/3 | highest final in the project |
 
 ---
 
@@ -55,11 +95,16 @@ this repo (`NormalTanhDistribution`, `src/networks/distributions.py`)
 | sgd mt20 | 279 ± 466 | 2/3 | 5.15 | −0.75 |
 | sgd mt40 | −62 ± 535 | 1/3 | **58.5** | −0.59 |
 | sgd mt80 | −99 ± 405 | 2/3 | **295.8** | −0.71 |
-| pc_reinforce (all 8) | 8–66 (config means) | 0/3 | 0.04–0.08 | n/a |
+| pc_reinforce (all 8) | 8–66 (config means) | 0/3 ⚠ | 0.04–0.08 | n/a |
+
+⚠ **vacuous**: no pc_reinforce seed ever reached VIABILITY=300 (best per seed ≤ 230), so the collapse rule cannot fire. Read as "never learned", not "stable".
 
 **Findings.** (a) The Euclidean `1/σ²` target under SGD produces extremely large
-policy updates — `kl_max` up to **296** — and gets worse with more inference. (b) Adam's
-adaptive rescaling masks this (`kl_max` ≈ 0.4). (c) Adam has positive value-EV,
+policy updates — `kl_max` up to **296** — and gets worse with more inference (3.1 →
+5.1 → 58.5 → 295.8 for mt10→80). (b) Under Adam the same targets give far smaller
+realised steps (`kl_max` 0.49 / 0.42 / 0.46 for mt10–40, though **2.91** at mt80).
+Adam's per-parameter rescaling is the obvious explanation but is not directly tested
+here. (c) Adam has positive value-EV,
 SGD strongly negative: two different critic regimes. (d) **PC-REINFORCE without a
 critic barely learns at bench scale**: config-mean finals are 8–66 and individual
 seeds span −29 to 230, against 1141 for the best actor-critic seed. The value head is
@@ -157,7 +202,7 @@ does capping that move prevent it?
 
 **Finding.** Capping the target offset **raises peaks** — mean-of-best reaches 1069
 (mt40 tclip2) and the single highest run in this sweep is 1341 (mt80 tclip2 seed 2),
-above the 1121 maximum of the unclipped baseline — but it **never removes the
+above the 1147 maximum best of the unclipped baseline (§3.1 adam mt80 seed 3) — but it **never removes the
 collapse**: 1/3 in every cell. A bound in action space is not the missing constraint.
 (These are not the highest returns seen at bench scale overall: `stdglobal` mt10
 seed 2 peaked at 2859 before collapsing 3/3, §3.4.)
@@ -185,7 +230,9 @@ adopting it stabilise PCPG?
 | adam mt20 | −599 ± 968 | 2/3 | **151.9** | 0.61 |
 | adam mt40 | −524 ± 47 | 1/3 | 169.8 | 0.91 |
 | adam mt80 | −451 ± 84 | 1/3 | 170.2 | 0.73 |
-| sgd (all) | −46 … −0 | 0/3 | 0.6–1.0 | 0.06 |
+| sgd (all) | −46 … −0 | 0/3 ⚠ | 0.6–1.0 | 0.06 |
+
+⚠ **vacuous**: no SGD `stdglobal` seed reached 300 (best ≤ 73). These runs did not learn; the 0/3 is not evidence of stability.
 
 **Finding.** A **state-independent** `log_std` — exactly the parameterisation PPO
 uses successfully here — is **catastrophic for PCPG**: `kl_max` up to 170, saturation
@@ -229,11 +276,16 @@ source, rather than clipping its consequences (§3.2, §3.3)?
 | config | final | best | AUC | collapse | kl_max |
 |---|---|---|---|---|---|
 | **sgd mt20 nat** | **781 ± 47** | 862 ± 52 | **441 ± 18** | **0/3** | **0.04** |
-| sgd mt80 nat | 357 ± 433 | 802 ± 114 | 384 ± 71 | 0/3 | 0.06 |
+| sgd mt80 nat | 357 ± 433 | 802 ± 114 | 384 ± 71 | 0/3 † | 0.06 |
 | adam mt20 nat | 425 ± 491 | 753 ± 28 | 284 ± 116 | 1/3 | 0.30 |
 | adam mt80 nat | 369 ± 480 | 812 ± 116 | 341 ± 118 | 1/3 | 0.32 |
 
-Per-seed finals: **759 / 738 / 846** — unusually tight for this project.
+† `sgd mt80 nat` seed 2 has `severe_collapse = 1`: it peaked at 680 and ended at
+**−62**. The collapse rule missed it (needs 3 consecutive sub-threshold evals), so
+"0/3" overstates its stability.
+
+Per-seed finals for the mt20 winner: **759 / 738 / 846** — the tightest spread in this
+project (population std 47).
 
 **Finding.** The natural target is the only strategy tested that produces a clean 3-seed
 result — **but only under SGD**. Same target under Adam still spikes to `kl_max` 0.30
@@ -302,9 +354,16 @@ unclipped). The returns did not follow. Two reasons are consistent with the data
    catch seed 1's collapse also fires constantly on the seed that is doing fine.
    (Under the *natural* target the signal is absent altogether — see §4.3.)
 
-**Conclusion: structural, not numerical.** Bounding step *magnitude* is not what the
-natural target provides (272 vs 781). What clipping does **not** touch, and what
-remains untested: gradient *direction* (e.g. whether consecutive gradients are
+**Conclusion within this experiment:** clipping the gradient norm does not prevent
+the collapse of the Euclidean update. The controlled comparison is
+clip-vs-no-clip *inside this sweep* (267 → 294 / 280 / 272, all same config).
+
+⚠ **Do not read "272 vs 781" as a clean contrast.** The §3.5 winner differs from
+these runs in **two** variables — `natural_target` *and* `max_grad_norm` — so that
+gap cannot be attributed to either alone. Testing "does clipping substitute for the
+natural target?" needs natural+clip and Euclidean+no-clip cells that do not exist yet.
+
+What clipping does **not** touch, and what remains untested: gradient *direction* (e.g. whether consecutive gradients are
 strongly aligned, which would produce exactly the observed slow drift), Adam's
 preconditioned update size, per-parameter or per-sample spikes hidden inside the
 global norm.
@@ -375,11 +434,23 @@ empty scaffolding for this same sweep; the data is here.*
 **`benchmark_halfcheetah_capacity_5m`** — single best seed ever: **2937** (adam ts07),
 but 2/3 collapse; ts05 gave 2902 then −604/−480.
 
-**Finding.** Increasing model capacity raises the achievable peak return (≈2900 vs
-≈1100) and does **not** improve
-reliability. Critically, **SGD at lr=0.03 — the bench winner's LR — collapses 3/3 at
-5M**, so the §3.5 recipe is *not* safe to promote unchanged. Lower LR (0.01) is
-0/3 but weak.
+**Finding.** The 5M/[256,256]/1024-env runs reach much higher returns than the
+1M/[64,64]/256-env bench runs (≈2900–3200 vs ≈1100) and remain unreliable (2–3 of 3
+collapsing in most Adam cells). ⚠ That comparison changes **capacity, batch size and
+step budget together**, so it does not isolate capacity.
+
+⚠ **On promoting §3.5 to 5M — the evidence is weaker than it looks.**
+`sgd ts05 lr003 5m` does collapse 3/3, and it shares the optimizer and actor
+`lr=0.03` with the §3.5 winner. But it differs in **5 of 12** config fields:
+`target_scale` 1.0→0.5, `natural_target` **True→False**, `width` 64→256,
+`num_envs` 256→1024, `steps` 1M→5M. In particular it does **not** use the natural
+target, which is the whole point of §3.5. So this run is *not* the §3.5 recipe at
+5M and cannot show that recipe is unsafe. **The actual experiment — natural target,
+ts=1.0, SGD lr=0.03, at 5M — has never been run.**
+
+The SGD rows marked 0/3 are also weak evidence: `sgd ts05 lr0003` had 1 of 3 seeds
+reach viability and `sgd ts05 lr001` likewise, so those 0/3 counts are largely
+vacuous.
 
 **`pcr_sota`** (PC-REINFORCE, 8 configs, 24 runs, 5M): the single highest peak in
 this whole project — **3522** (ts06 seed 2) — followed by catastrophic collapse:
@@ -400,16 +471,21 @@ that same run. Confirms §3.1: no critic ⇒ high ceiling, no floor.
 | Clipping `‖g‖` does not prevent collapse | 1.56% of updates clipped, kl_max 6→0.4, returns flat | **holds** |
 | Adam clip1.0 was a no-op in 2 cells | bit-identical finals | **[verified]** |
 | Old SGD clip runs are invalid | `lr=0.0003` vs `0.03` in config.yaml | **[verified]** |
-| Global σ is catastrophic | −599, kl_max 152 | **holds** |
+| Global σ destroys Adam runs | −599 ± 968, kl_max 152, 2/3 collapse | **holds** |
+| Global σ "kills SGD" | SGD rows never reached viability; cannot separate "σ broke it" from "never learned" | **ambiguous** |
 | Transformation matches PPO | same `NormalTanhDistribution`; Jacobian in `log_prob`; no `μ,σ` dependence in tanh correction | **holds (code)** |
 | ~~KL shock causes the collapse~~ | see §4.1 | **RETRACTED** |
 | Deterministic-eval explains it | see §4.2 | **REFUTED** |
 
 ### 4.1 Retracted: "a shared KL shock knocks the run over"
 
-**[verified]** Across 16 collapsing runs, the `kl_max` spike is **after the collapse
-trough in 5**, **before the peak in 2**, and inside the (often ~500k-step) decline
-window in 9 — where it carries little information. Concretely, `sminm10` seed 3:
+**[verified]** Selection here is *not* the `collapse` flag of §1b — it is the 16
+runs in `trust_region_kl_natural` + `knob_fill_smin_vlr` + `gradclip_probe` whose
+eval curve falls **more than 400** from peak to trough (the analyzer flag marks only
+10 of the 34 runs in those folders; this wider net is deliberate, to avoid selecting
+on the metric under scrutiny). Across those 16, the `kl_max` spike is **after the
+collapse trough in 5**, **before the peak in 2**, and inside the (often ~500k-step)
+decline window in 9 — where it carries little information. Concretely, `sminm10` seed 3:
 eval peaks 491k, troughs 737k, `kl_max` at **778k** — after the decline had already
 completed. And in that config the seed with the **largest** spike (seed 2, 0.150)
 **survived at 859**, while the crashing seed 3 had the **smallest** (0.108). The data
@@ -417,9 +493,11 @@ do not support the KL spike as the primary cause.
 
 ### 4.2 Refuted: "stochasticity protects training; only deterministic eval collapses"
 
-**[verified]** `training/mean_reward` is the stochastic policy. In **6 of 9**
-collapsing runs it falls too, and in the two Adam natural cases it **changes sign**
-(+0.0128 → −0.0111; +0.0166 → −0.0102). The policy genuinely degrades.
+**[verified]** `training/mean_reward` is the stochastic policy. Selecting the 9 runs
+whose eval falls >300 from peak to *final* (again a wider net than the §1b flag): in
+**6 of 9** the training reward falls too, and in the two Adam natural cases it
+**changes sign** (+0.0128 → −0.0111; +0.0166 → −0.0102). The policy genuinely
+degrades, so the collapse is not an artefact of evaluating at `tanh(μ)`.
 
 ### 4.3 Current best signature (correlational only)
 
@@ -432,6 +510,12 @@ families is:
 |---|---|---|
 | crashing (7 runs) | **1.2–3.1×** | rises |
 | healthy (6 runs) | 1.11–1.27× | ~flat |
+
+⚠ **Pooling caveat.** These 13 runs come from three different families (Adam+natural,
+SGD+natural, SGD+Euclidean) with different optimizers, targets and σ floors, and
+"crashing"/"healthy" is the >400 peak-to-trough split of §4.1, not the §1b flag. The
+ranges do not overlap, but pooling heterogeneous configs at n=13 is weak support for
+a discrimination claim.
 
 **This is a signature, not a cause.** Saturation *level* does not discriminate —
 healthy `sminm10` seed 1 runs at 0.119 saturation and scores 911, *higher* than
@@ -449,8 +533,10 @@ cause, symptom, or bystander.
    updates — moderate but aligned gradients would produce exactly the observed slow
    monotone drift), Adam's preconditioned update norm `‖m̂/(√v̂+ε)‖` vs `‖g‖`,
    per-layer/per-head decomposition.
-3. **Whether SGD+natural+mt20 survives 5M.** §3.8 suggests not as-is (SGD lr=0.03
-   collapses 3/3 at 5M).
+3. **Whether SGD+natural+mt20 survives 5M — untested.** The 5M SGD lr=0.03 cell
+   that collapses 3/3 is a *different* configuration (Euclidean target, ts=0.5,
+   [256,256], 1024 envs), so it says nothing directly about the §3.5 recipe. Running
+   natural+ts1.0+SGD lr0.03 at 5M is the missing experiment.
 4. **Statistical power.** Every cell is n=3.
 
 ### Blocker
