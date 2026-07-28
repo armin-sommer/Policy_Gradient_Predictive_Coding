@@ -105,53 +105,50 @@ what makes PCPG work at this scale.
 ![baseline sweep](../results/trust_region_kl/learning_curve.png)
 *§3.1 all 16 baseline configs.*
 
-#### 3.1a What moves first when these runs collapse
+#### 3.1a What moves first when a run collapses (both target families)
 
-Timing analysis over the **17 collapsing runs** in this folder (peak-to-trough eval
-drop > 400). Collapse onset = the eval peak before the fall. For each diagnostic I
-take the step at which it first doubles **from its post-initialisation minimum** —
-searching only after that minimum, so the initial decay cannot be mistaken for a
-rise. Negative = the signal moved *before* the return started falling.
+Timing over every collapsing run (peak-to-trough eval drop > 400): **17** in
+`trust_region_kl` (Euclidean) and **12** in `trust_region_kl_natural` +
+`knob_fill_smin_vlr` (natural). Collapse onset = the eval peak before the fall.
 
-| signal | median lead | moved before onset |
-|---|---|---|
-| **`mu_target_mag` doubles** | **−205k** | **17/17** |
-| `policy_drift` doubles | −156k | 16/17 |
-| `\|μ\|` doubles | −131k | 15/17 |
-| `kl_max` doubles | −131k | 13/17 |
-| `pretanh_sat` doubles | −25k | 12/17 |
-| train reward peaks | +8k | 6/17 |
-| **`value_explained_var` bottoms** | **+213k** | 4/17 (*after*) |
+**Measure.** For each diagnostic, the step at which its smoothed series first crosses
+the **midpoint of its own p10–p90 range**. This is threshold-free, does not depend on
+where the series minimum falls, and uses reflect-padded smoothing so the series edges
+are not dragged toward zero. Negative = moved *before* the return started falling.
 
-**Three results.**
+| signal | Euclidean median | before onset | natural median | before onset |
+|---|---|---|---|---|
+| **`mu_target_mag`** | **−57k** | **14/17** | **−442k** | **12/12** |
+| `pretanh_sat` | +16k | 8/17 | −401k | 11/12 |
+| `policy_drift` | −16k | 9/17 | −70k | 9/12 |
+| `kl_max` | +106k | 7/17 | −29k | 6/12 |
+| `\|μ\|` | +139k | 4/17 | +53k | 2/12 |
 
-1. **The target magnitude moves first, in every run.** `mu_target_mag_max` — the raw
-   size of the offset the PC target asks for — doubles a median 205k steps before the
-   return turns, in 17 of 17. It is the only universal precursor and it is upstream
-   of the others.
-2. **KL rises beforehand here, but its peak does not.** `kl_max` doubling leads in
-   13/17, so unlike the natural-target runs (§4.1) KL growth *is* part of the run-up.
-   But the KL **maximum** lags onset in 16/17 (median +451k) — the largest spike
-   happens during or after the fall. "A KL spike caused it" remains unsupported;
-   KL growth is a symptom of the target growing.
-3. **The critic degrades afterwards.** `value_explained_var` bottoms out *after*
-   onset in 13/17 (median +213k). In this family a broken critic is a **consequence**
-   of the policy already falling apart, not its cause — worth contrasting with the
-   critic-side reading of the SGD natural-target runs.
+**`mu_target_mag` is the only signal that leads in both families** — the raw size of
+the offset the PC target asks for, ahead of the return turning in 14/17 Euclidean and
+**12/12** natural runs. In the natural family the lead is large and unanimous
+(median 442k steps).
 
-Implied ordering: `target magnitude ↑ → drift ↑ → |μ| ↑ → KL ↑ → saturation ↑ →
-return falls → critic degrades`.
+**KL does not lead in either family.** Euclidean 7/17 (median *+106k*, i.e. it
+typically moves after the fall begins), natural 6/12 — a coin flip. Separately, the
+`kl_max` *peak* lags onset in 16/17 Euclidean and 10/12 natural runs. Nothing here
+supports a KL spike as the trigger; this is the second independent family agreeing
+with the retraction in §4.1.
 
-⚠ **Two limits.** These quantities are mechanically coupled — the offset *is*
-`ts·A·(z−μ)/σ²`, so a bigger target necessarily produces bigger drift and bigger KL.
-Ordering them in time does not separate cause from arithmetic consequence. And the
-"doubling" threshold is arbitrary; the ordering held when the multiple was varied,
-but the individual leads move.
+**`|μ|` growth lags in both** (4/17, 2/12), which is worth holding against §4.3: `|μ|`
+separates crashing from healthy runs by *magnitude*, but it is not an early warning —
+by the time it moves, the return is usually already falling.
 
-*(Reproduce: the timing script is not committed; it reads `seed_*.log` directly and
-recomputes onset per run. Two earlier versions of this analysis produced artifacts —
-`argmin` of train reward always returns step 8k before reward normalisation settles,
-and a saturation threshold crossed during the initial decay — both discarded.)*
+⚠ **Limits.** These quantities are mechanically coupled — the offset *is*
+`ts·A·(z−μ)/σ²` — so ordering them in time does not separate cause from arithmetic
+consequence. The Euclidean leads are short (median 57k ≈ 7 eval points) and the
+Euclidean `n` counts several near-duplicate trajectories across clip settings.
+
+*(Method note: an earlier version of this section reported larger leads from a
+"doubles from its post-minimum value" rule. That rule had two defects — zero-padded
+smoothing pulled the apparent minimum to the series edge, and it cannot fire at all
+when the minimum falls late, which is why it returned no value for every natural-target
+run. The numbers above use the threshold-free measure and supersede it.)*
 
 ### 3.2 `trust_region_kl_clip` — clip the policy gradient (9 configs, 26 runs)
 
