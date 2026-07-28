@@ -50,12 +50,11 @@ All from `scripts/analyze_pcpg_logs.py`.
 
 Two consequences that matter when reading every table:
 
-1. **`0/3` measures nothing where no seed reached 300.** The rule asks "did the run
-   climb above 300 and then fall apart?" — if the run never climbed above 300, the
-   answer is no, and it scores `0/3`: the same score a genuinely stable config gets.
-   This affects all `pc_reinforce` bench rows (§3.1), all SGD `clip1.0` rows (§3.2),
-   all SGD `stdglobal` rows (§3.4), and partly the 5M SGD rows (§3.8). In those cells
-   `0/3` means **"never learned"**, not "stable" — the opposite of what it looks like.
+1. **Only a run that first reached 300 can ever be counted as collapsed — so a
+   config whose runs never got that far also shows `0/3`, and there the zero means
+   "never learned", not "stable".** Affected: all `pc_reinforce` bench rows (§3.1),
+   all SGD `clip1.0` rows (§3.2), all SGD `stdglobal` rows (§3.4), and partly the 5M
+   SGD rows (§3.8).
 2. **`collapse = 0` does not mean no degradation.** Nine runs have
    `collapse = 0` but `severe_collapse = 1` (peaked ≥300, ended <0) — the rule needs
    3 *consecutive* sub-threshold evals, so a late fall can miss it. Flagged inline
@@ -95,7 +94,7 @@ Two consequences that matter when reading every table:
 | sgd mt80             | −99 ± 405           | 2/3      | **295.8** | −0.71    |
 | pc_reinforce (all 8) | 8–66 (config means) | 0/3 ⚠    | 0.04–0.08 | n/a      |
 
-⚠ **the `0/3` here means "never learned", not "stable"**: no pc_reinforce seed ever reached the viability threshold of 300 (best per seed ≤ 230), so the collapse rule can never fire.
+⚠ No pc_reinforce seed ever reached 300 (best per seed ≤ 230), so none could be counted as collapsed — this `0/3` means **"never learned"**, not "stable".
 
 **Findings.** (a) The Euclidean `1/σ²` target under SGD produces extremely large
 policy updates — `kl_max` up to **296** — and gets worse with more inference (3.1 →
@@ -230,7 +229,7 @@ adopting it stabilise PCPG?
 | adam mt80 stdglobal | −451 ± 84 | 1/3 | 170.2 | 0.73 |
 | sgd (all) | −46 … −0 | 0/3 ⚠ | 0.6–1.0 | 0.06 |
 
-⚠ **the `0/3` here means "never learned", not "stable"**: no SGD `stdglobal` seed reached the viability threshold of 300 (best ≤ 73), so the collapse rule can never fire.
+⚠ No SGD `stdglobal` seed reached 300 (best ≤ 73), so none could be counted as collapsed — this `0/3` means **"never learned"**, not "stable".
 
 **Finding.** With a **state-independent** `log_std` — the parameterisation PPO uses
 successfully here — every Adam cell ends with a negative mean return (−451 to −647),
@@ -448,9 +447,8 @@ target, which is the whole point of §3.5. So this run is *not* the §3.5 recipe
 ts=1.0, SGD lr=0.03, at 5M — has never been run.**
 
 The SGD rows marked 0/3 are also weak evidence: in both `sgd ts05 lr0003` and
-`sgd ts05 lr001` only 1 of 3 seeds ever reached 300, so for the other two seeds the
-collapse rule could not fire — those `0/3` counts mostly reflect runs that never
-learned, not runs that held up.
+`sgd ts05 lr001` only 1 of 3 seeds ever reached 300, so the other two could not be
+counted as collapsed whatever they did.
 
 **`pcr_sota`** (PC-REINFORCE, 8 configs, 24 runs, 5M): the single highest peak in
 this whole project — **3522** (ts06 seed 2) — followed by catastrophic collapse:
