@@ -12,10 +12,8 @@ steps, 3 seeds): PPO best-per-seed **1759 / 4360 / 2590** (mean 2903); TRPO
 
 **Status in one line:** the tightest 3-seed result to date is
 `SGD + natural target + max_t1=20` (**781 ± 47**, 0/3 collapse); four other
-stabilisation strategies were tested and did not remove the collapses; and under the
-natural target there is now an **early-warning signal** — `mu_target_mag` starts
-climbing a median **440k steps (≈5 eval points) before the return falls, in 12/12
-collapsing runs** (§3.1a). The *cause* of the collapses is still not established.
+stabilisation strategies were tested and did not remove the collapses; and neither the
+cause of the collapses nor any reliable early-warning signal has been established.
 
 *(Note: it is not the only 0-collapse config — `adam mt80` (§3.1),
 `adam mt10 clip1.0` and `adam mt80 clip1.0` (§3.2) are also 0/3 with all seeds
@@ -108,71 +106,51 @@ what makes PCPG work at this scale.
 ![baseline sweep](../results/trust_region_kl/learning_curve.png)
 *§3.1 all 16 baseline configs.*
 
-#### 3.1a What moves first when a run collapses (both target families)
+#### 3.1a Timing of the collapses — mostly RETRACTED
 
-Timing over every collapsing run (peak-to-trough eval drop > 400): **17** in
-`trust_region_kl` (Euclidean) and **12** in `trust_region_kl_natural` +
-`knob_fill_smin_vlr` (natural). Collapse onset = the eval peak before the fall.
+⚠ **Earlier versions of this section claimed `mu_target_mag` is an early-warning
+signal (12/12 runs, ~440k steps of lead). That claim was false and is withdrawn.**
 
-**Measure.** For each diagnostic, the step at which its smoothed series first crosses
-the **midpoint of its own p10–p90 range**. Where a diagnostic is logged both as a
-batch `_max` and a batch `_mean`, both are reported — the `_max` is an extreme over
-~2048 probe observations × action dims, so it can move for reasons the typical update
-does not.
+The measure was "first step at which the smoothed series crosses the midpoint of its
+own p10–p90 range". For a series that only *falls*, that condition is already true at
+the first logged step, so the measure returned `first_step − onset` — which is just
+the collapse time restated, carrying no information about the signal. Under the
+natural target `mu_target_mag` does fall monotonically (see below), so **12/12 of the
+reported "leads" fired at step 8k**. Audit of every signal, counting how often the
+crossing fired at the first logged step:
 
-The measure is threshold-free, does not depend on where the series minimum falls, and
-uses reflect-padded smoothing so the series edges are not dragged toward zero.
-Negative = moved *before* the return started falling.
+| signal | Euclidean | natural |
+|---|---|---|
+| `mu_target_mag_max` / `_mean` | 0/17 clean | **12/12 artifact** |
+| `pretanh_sat` | 6/17 | **11/12 artifact** |
+| `policy_kl_mean` | 7/17 | 4/12 |
+| `policy_kl_max` | 3/17 | 4/12 |
+| `policy_drift_mean` | 0/17 clean | 0/12 clean |
+| `mu_abs_mean` | 0/17 clean | 0/12 clean |
 
-| signal | Euclidean median | before onset | natural median | before onset |
-|---|---|---|---|---|
-| **`mu_target_mag_max`** | −57k | 14/17 | **−442k** | **12/12** |
-| **`mu_target_mag_mean`** | −90k | 13/17 | **−442k** | **12/12** |
-| `pretanh_sat` | +16k | 8/17 | −401k | 11/12 |
-| `policy_drift_max` | −16k | 9/17 | −70k | 9/12 |
-| `policy_drift_mean` | −41k | 10/17 | −66k | 9/12 |
-| **`kl_mean`** | **−164k** | **11/17** | −82k | 7/12 |
-| `kl_max` | +106k | 7/17 | −29k | 6/12 |
-| `\|μ\|` | +139k | 4/17 | +53k | 2/12 |
+**Why `mu_target_mag` falls under the natural target.** The offset is
+`ts·A·(z−μ)` with `z−μ = σ·ε`, so `E|offset| ≈ ts·E|A|·σ·√(2/π)`. Advantages are
+normalised so `E|A|` is flat (~1.05× over a run), and σ shrinks as the policy
+sharpens — measured 0.42× / 0.41× / 0.53× in three collapsing runs, with the
+predicted and observed magnitudes agreeing to within ~10%. The target magnitude
+therefore *decreases* by ~3× over training. It is not drifting up, and it is not a
+warning signal.
 
-Evals are 81.9k steps apart, so divide any lead by ~82k to read it in eval points.
+**What survives, because it does not use that measure:**
 
-**Under the natural target, `mu_target_mag` is a genuine early warning.** It leads in
-**12/12** runs by a median **442k steps (5.4 eval points)** — and the `_mean` and
-`_max` variants give the *identical* result, so this is the whole distribution of
-target offsets shifting, not one outlier sample in the batch. This is the only signal
-in the table with both unanimity and a lead well above the eval sampling resolution.
+1. **The `kl_max` *peak* lags collapse onset in 16/17 Euclidean and 10/12 natural
+   runs.** This is an `argmax` over the run, unaffected by the crossing bug. It is an
+   independent second family supporting the §4.1 retraction: the largest KL jump
+   arrives after the return is already falling.
+2. **`|μ|` is not an early warning.** Its crossing is artifact-free in both families
+   (0/17, 0/12) and it *lags* onset — before onset in only 4/17 and 2/12 runs. This
+   still qualifies §4.3: `|μ|` separates crashing from healthy runs by magnitude, but
+   after the fact.
 
-⚠ **The Euclidean column is much weaker than it looks.** Its best `mu_target_mag`
-lead is 57k–90k, i.e. **0.7–1.1 eval points** — around the spacing of the eval curve
-itself, so barely resolvable. In that family the most consistent precursor is
-actually **`kl_mean`** (11/17, median −164k ≈ 2.0 eval points), not the target
-magnitude.
-
-**On KL, the max and the mean disagree — and only the max supports §4.1.**
-`kl_max` does not lead (7/17 Euclidean, 6/12 natural) and its *peak* lags onset in
-**16/17** and **10/12** — so a KL *spike* is still not the trigger, and this remains a
-second family agreeing with the §4.1 retraction. But `kl_mean` does lead in the
-Euclidean family (11/17, −164k), so "KL carries no early information" would be too
-strong: the *typical* per-update policy change drifts up beforehand, while the
-*worst* one arrives too late to be causal.
-
-**`|μ|` growth lags in both** (4/17, 2/12), which is worth holding against §4.3: `|μ|`
-separates crashing from healthy runs by *magnitude*, but it is not an early warning —
-by the time it moves, the return is usually already falling.
-
-⚠ **Limits.** These quantities are mechanically coupled — the offset *is*
-`ts·A·(z−μ)/σ²` — so ordering them in time does not separate cause from arithmetic
-consequence. Onset is located on the eval curve, which is sampled only every 81.9k
-steps, so any lead shorter than that is unresolvable (this is what sinks the
-Euclidean column). All 24 actor-critic runs in `trust_region_kl` were checked to be
-distinct trajectories, so the n=17 is not inflated by duplicates.
-
-*(Method note: an earlier version of this section reported larger leads from a
-"doubles from its post-minimum value" rule. That rule had two defects — zero-padded
-smoothing pulled the apparent minimum to the series edge, and it cannot fire at all
-when the minimum falls late, which is why it returned no value for every natural-target
-run. The numbers above use the threshold-free measure and supersede it.)*
+**What is now unknown:** which quantity, if any, moves first. Answering that needs a
+change-point method valid for both rising and falling series — the three measures
+tried here (post-minimum doubling, p10–p90 midpoint crossing, and a raw `argmin`)
+each produced artifacts. Treat "what leads a PCPG collapse" as open.
 
 ### 3.2 `trust_region_kl_clip` — clip the policy gradient (9 configs, 26 runs)
 
@@ -536,9 +514,9 @@ that same run. Confirms §3.1: no critic ⇒ high ceiling, no floor.
 | Global σ destroys Adam runs              | −599 ± 968, kl_max 152, 2/3 collapse                                                          | **holds**        |
 | Global σ "kills SGD"                     | SGD rows never reached viability; cannot separate "σ broke it" from "never learned"           | **ambiguous**    |
 | Transformation matches PPO               | same `NormalTanhDistribution`; Jacobian in `log_prob`; no `μ,σ` dependence in tanh correction | **holds (code)** |
-| `mu_target_mag` warns early (natural target) | leads in **12/12** collapsing runs, median −442k (≈5.4 eval pts); `_mean` and `_max` identical, so not a batch outlier (§3.1a) | **holds (n=12)** |
-| No usable early warning under the Euclidean target | best lead 0.7–2.0 eval points, at/below eval sampling resolution (§3.1a)         | **holds**        |
-| `\|μ\|` growth is an early warning       | **lags** onset in both families (4/17, 2/12) — it separates by magnitude but does not predict (§3.1a vs §4.3) | **REFUTED**      |
+| ~~`mu_target_mag` warns early (natural target)~~ | measurement artifact: the crossing fired at the first logged step in 12/12 runs (§3.1a) | **RETRACTED**    |
+| `\|μ\|` growth is an early warning       | **lags** onset in both families (4/17, 2/12), artifact-free measure (§3.1a) | **REFUTED**      |
+| No early-warning signal identified       | three change-point measures tried, each produced artifacts (§3.1a)                            | **open**         |
 | ~~KL shock causes the collapse~~         | see §4.1; §3.1a adds a second family — `kl_max` peak lags onset in 16/17 and 10/12            | **RETRACTED**    |
 | Deterministic-eval explains it           | see §4.2                                                                                      | **REFUTED**      |
 
@@ -614,11 +592,9 @@ growth could be cause, symptom, or bystander.
 
 ## 5. What is not established
 
-0. **What `mu_target_mag` actually is.** §3.1a establishes it as the earliest
-   *observable*, not as the cause: target magnitude, drift and KL are algebraically
-   linked (the offset *is* `ts·A·(z−μ)/σ²`), so moving first may just mean it is the
-   most sensitive detector of a shift happening upstream. The frozen-checkpoint test
-   below is what would separate these.
+0. **What moves first.** Unresolved — see the retraction in §3.1a. A change-point
+   method valid for both rising and falling series is needed before any "X leads the
+   collapse" claim can be made.
 1. **Causality of `|μ|` growth.** Needs the frozen-checkpoint intervention:
    evaluate a collapsed checkpoint under `tanh(clip(μ,−b,b))`. If return recovers,
    μ-magnitude is functionally responsible; if not, it is downstream.
