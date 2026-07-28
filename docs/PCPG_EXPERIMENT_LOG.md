@@ -1,23 +1,19 @@
 # PCPG on HalfCheetah — complete experiment log
 
-Every run, what it asked, what it showed. All numbers extracted from the seed logs
-in `results/`, not from notes. Claims that rest on timing are marked **[verified]**
-with the exact steps.
 
 **Context.** PCPG = predictive-coding policy gradient. The theoretical claim is that
 the PC weight update approximates a *natural gradient* at inference convergence. The
 empirical goal on HalfCheetah is not to beat PPO (PPO ≈ 4.4k @ 1M, PCPG ≈ 0.9k) but
-to get the continuous-control update **reliable across seeds** — the prerequisite for
-testing where PC beats backprop.
+to get the continuous-control update **reliable across seeds**.
 
 **Status in one line:** we have the first 0-collapse 3-seed result
 (`SGD + natural target + max_t1=20`, **781 ± 47**), we know four stabilisation
 strategies that *don't* work and why, and the mechanism of the remaining collapses
-is **not yet established** — only a signature.
+is **not yet established**.
 
 ---
 
-## 1. The update, and which config parameter changes each part
+## 1. The update chain
 
 ```
 advantage A ─▶ target = μ + ts·A·(z−μ)/σ²  ─▶ PC inference (max_t1 steps) ─▶ weight grad ─▶ optimizer step
@@ -26,12 +22,12 @@ advantage A ─▶ target = μ + ts·A·(z−μ)/σ²  ─▶ PC inference (max_
                              clip     (σ floor)                            (SGD only)
 ```
 
-Actions are `a = tanh(z)`, `z ~ N(μ,σ)` — the *same* squashed-Gaussian PPO uses in
-this repo (`NormalTanhDistribution`, `src/networks/distributions.py`).
+Actions are `a = tanh(z)`, `z ~ N(μ,σ)` — the same squashed Gaussian distribution used
+by PPO in this repo (`NormalTanhDistribution`, `src/networks/distributions.py`)
 
 ---
 
-## 2. Headline results
+## 2. Overview of all runs
 
 | recipe | final | collapse | note |
 |---|---|---|---|
@@ -44,7 +40,7 @@ this repo (`NormalTanhDistribution`, `src/networks/distributions.py`).
 
 ---
 
-## 3. Sweeps, in order
+## 3. Sweeps (ordered)
 
 ### 3.1 `trust_region_kl` — the baseline matrix (16 configs, 48 runs, 1M)
 
@@ -62,8 +58,8 @@ this repo (`NormalTanhDistribution`, `src/networks/distributions.py`).
 | sgd mt80 | −99 ± 405 | 2/3 | **295.8** | −0.71 |
 | pc_reinforce (all 8) | 8–66 | 0/3 | 0.04–0.08 | n/a |
 
-**Findings.** (a) The Euclidean `1/σ²` target under SGD produces *enormous* policy
-jumps — `kl_max` up to **296** — and gets worse with more inference. (b) Adam's
+**Findings.** (a) The Euclidean `1/σ²` target under SGD produces extremely large
+policy updates — `kl_max` up to **296** — and gets worse with more inference. (b) Adam's
 adaptive rescaling masks this (`kl_max` ≈ 0.4). (c) Adam has positive value-EV,
 SGD strongly negative: two different critic regimes. (d) **PC-REINFORCE without a
 critic does not learn at bench scale** (finals 8–66) — the value head is essential.
@@ -88,7 +84,7 @@ bounding `‖g‖` prevent them?
 | adam mt20 clip1.0 | 649 ± 644 | 1/3 | **bit-identical** |
 | adam mt40 clip1.0 | 391 ± 547 | 1/3 | **bit-identical** |
 | adam mt80 clip1.0 | 875 ± 91 | 0/3 | changed (kl_max 2.91→1.43) |
-| sgd mt10–80 clip1.0 | **−11 ± 2** | 0/3 | **dead** |
+| sgd mt10–80 clip1.0 | **−11 ± 2** | 0/3 | **fails to learn** |
 
 **[verified]** Adam mt20 and mt40 with `clip=1.0` produce **bit-identical finals** to
 no-clip (`[1121, 1088, −261]` and `[675, 870, −374]`) — the clip *never fired*,
@@ -129,7 +125,7 @@ does capping that move prevent it?
 | adam mt80 tclip2 | 781 ± 547 | 1039 | 1/3 |
 
 **Finding.** Capping the target offset **raises peaks** (up to 1069, the best at bench
-scale) but **never removes the collapse** — 1/3 in every cell. An output-space bound
+scale) but **never removes the collapse** — 1/3 in every cell. A bound in action space
 is not the missing constraint.
 
 ### 3.4 `trust_region_kl_stdglobal` — one shared σ instead of a per-state σ (8 configs, 24 runs)
@@ -156,7 +152,8 @@ adopting it stabilise PCPG?
 
 **Finding.** A **state-independent** `log_std` — exactly the parameterisation PPO
 uses successfully here — is **catastrophic for PCPG**: `kl_max` up to 170, saturation
-to 0.91, negative returns. PCPG requires the per-state σ head. This is the
+to 0.91, negative returns. In this implementation PCPG performs dramatically worse
+with a state-independent σ. This is the
 strongest evidence that PCPG's instability is *not* a shared "MuJoCo/tanh" issue: the
 same parameterisation is fine for PPO in this codebase.
 
@@ -181,11 +178,13 @@ offset_logσ ← offset_logσ · 0.5
 ```
 
 The `1/σ²` factor is the amplifier: as σ shrinks toward its floor (0.135), it
-multiplies the target offset by up to ~55×. Removing it makes the target the
-natural-gradient direction the theory predicts.
+multiplies the target offset by up to ~55×. Removing it restores the Fisher-preconditioned
+(natural-gradient) target predicted by the theory. Whether the resulting *weight*
+update is a natural gradient additionally depends on inference converging, which is
+not tested here.
 
-**Question:** does removing that amplifier fix the instability at its source, rather
-than clipping its consequences (§3.2, §3.3)?
+**Question:** does removing that amplifier address the instability at its presumed
+source, rather than clipping its consequences (§3.2, §3.3)?
 
 | config | final | best | AUC | collapse | kl_max |
 |---|---|---|---|---|---|
@@ -196,14 +195,15 @@ than clipping its consequences (§3.2, §3.3)?
 
 Per-seed finals: **759 / 738 / 846** — unusually tight for this project.
 
-**Finding.** The natural target is the only strategy that produces a clean 3-seed
+**Finding.** The natural target is the only strategy tested that produces a clean 3-seed
 result — **but only under SGD**. Same target under Adam still spikes to `kl_max` 0.30
-and still collapses 1/3. So this is an **optimizer × target interaction**, not a
-property of the target alone. `mt80` adds seed variance without benefit.
+and still collapses 1/3. **Because the same target behaves differently under SGD and
+Adam, the stability cannot be explained by the target alone; it depends on the
+optimizer-target interaction.** `mt80` adds seed variance without benefit.
 
 ![natural target](../results/trust_region_kl_natural/collapse_anatomy_sgd_tanh_ts10_bench_lr003_mt20_nat.png)
 
-### 3.6 `gradclip_probe` — redo §3.2 without the learning-rate confound (4 configs, 10 runs)
+### 3.6 `gradclip_probe` — Marco's check, done properly (4 configs, 10 runs)
 
 **Changed:** `train.max_grad_norm`: `null` → `10.24` / `4.39` / `1.46`, on
 `halfcheetah_pc_actor_critic_sgd_tanh_ts10_bench_lr003_mt20` — i.e. **SGD at the
@@ -220,7 +220,8 @@ thresholds were set at its p99.9, p99 and p99/3 so that each fires at a known ra
 placed in the measured tail would catch?
 
 Measured tail (clip-free): **p50 0.671, p90 0.941, p99 4.387, p99.9 10.24** → tail
-ratio **6.5×**. A real heavy tail exists, as Marco predicted.
+ratio **6.5×**. The gradient-norm distribution has a pronounced empirical upper tail,
+as Marco predicted.
 
 | clip | bind rate | kl_max | final | collapse |
 |---|---|---|---|---|
@@ -229,10 +230,11 @@ ratio **6.5×**. A real heavy tail exists, as Marco predicted.
 | 4.39 (p99) | 0.47% | 3.49 / 2.48 / 0.31 | 280 ± 503 | 2/3 |
 | 1.46 (p99/3) | **1.56%** | **0.46 / 0.53 / 0.37** | 272 ± 475 | 1/3 |
 
-**Finding.** The clip fired and did not prevent the collapse. At `max_grad_norm=1.46`
+**Finding.** The clip fired, yet collapses still occurred. At `max_grad_norm=1.46`
 it clipped 1.56% of all policy updates and reduced `kl_max` from 6–12 to ~0.4 — so the
-realised policy step per update dropped more than 10× — and the returns did not change
-(267 → 294 → 280 → 272). Per seed, the outcome is determined by the seed, not the clip
+realised policy step per update dropped more than 10× — and mean returns remained
+essentially unchanged (267 → 294 → 280 → 272). Collapse count went 2/3 → 2/3 → 1/3,
+which is within seed noise at n=3. Per seed, the outcome is determined by the seed, not the clip
 value: seed 2 collapses at all three thresholds (−285 / −371 / −257) and seed 3 does
 not collapse at any (855 / 855 / 895).
 
@@ -297,7 +299,8 @@ empty scaffolding for this same sweep; the data is here.*
 **`benchmark_halfcheetah_capacity_5m`** — single best seed ever: **2937** (adam ts07),
 but 2/3 collapse; ts05 gave 2902 then −604/−480.
 
-**Finding.** Capacity raises the ceiling (≈2900 vs ≈1100) and does **not** fix
+**Finding.** Increasing model capacity raises the achievable peak return (≈2900 vs
+≈1100) and does **not** improve
 reliability. Critically, **SGD at lr=0.03 — the bench winner's LR — collapses 3/3 at
 5M**, so the §3.5 recipe is *not* safe to promote unchanged. Lower LR (0.01) is
 0/3 but weak.
@@ -319,18 +322,18 @@ Confirms §3.1: no critic ⇒ high ceiling, no floor.
 | Old SGD clip runs are invalid | `lr=0.0003` vs `0.03` in config.yaml | **[verified]** |
 | Global σ is catastrophic | −599, kl_max 152 | **holds** |
 | Transformation matches PPO | same `NormalTanhDistribution`; Jacobian in `log_prob`; no `μ,σ` dependence in tanh correction | **holds (code)** |
-| ~~KL shock causes the collapse~~ | see below | **RETRACTED** |
-| Deterministic-eval explains it | see below | **REFUTED** |
+| ~~KL shock causes the collapse~~ | see §4.1 | **RETRACTED** |
+| Deterministic-eval explains it | see §4.2 | **REFUTED** |
 
 ### 4.1 Retracted: "a shared KL shock knocks the run over"
 
 **[verified]** Across 16 collapsing runs, the `kl_max` spike is **after the collapse
 trough in 5**, **before the peak in 2**, and inside the (often ~500k-step) decline
 window in 9 — where it carries little information. Concretely, `sminm10` seed 3:
-eval peaks 491k, troughs 737k, `kl_max` at **778k** — *after it was already dead*.
-And in that config the seed with the **largest** spike (seed 2, 0.150) **survived at
-859**, while the crashing seed 3 had the **smallest** (0.108). The spike is not the
-cause.
+eval peaks 491k, troughs 737k, `kl_max` at **778k** — after the decline had already
+completed. And in that config the seed with the **largest** spike (seed 2, 0.150)
+**survived at 859**, while the crashing seed 3 had the **smallest** (0.108). The data
+do not support the KL spike as the primary cause.
 
 ### 4.2 Refuted: "stochasticity protects training; only deterministic eval collapses"
 
@@ -342,7 +345,8 @@ collapsing runs it falls too, and in the two Adam natural cases it **changes sig
 
 Gradient norms carry **no** collapse signal under the natural target — crashing seeds
 have equal or *lower* norms than survivors (0.204→**0.199** while crashing; healthy
-0.264). What does track, across all three families:
+0.264). The strongest empirical correlate observed across all three experiment
+families is:
 
 | | `\|μ\|` growth | saturation |
 |---|---|---|
