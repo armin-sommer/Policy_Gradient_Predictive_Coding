@@ -75,7 +75,7 @@ Two consequences that matter when reading every table:
 | SGD Euclidean mt20 | 279 ± 466 | 2/3 | `kl_max` reaches 5.1 |
 | Adam + global σ (PPO-style) | −599 ± 968 | 2/3 | catastrophic |
 | Adam capacity-matched 5M | best single final **2937** | 2/3 | 2nd-highest final; unreliable |
-| Adam 5M `ts04`/`ts05 lr0002` | best single final **3205** | 2/3 | highest final in the project |
+| Adam 5M `ts05 lr0002` | best single final **3205** | 2/3 | highest final in the project |
 
 ---
 
@@ -507,21 +507,29 @@ have equal or *lower* norms than survivors (0.204→**0.199** while crashing; he
 0.264). The strongest empirical correlate observed across all three experiment
 families is:
 
-| | `\|μ\|` growth | saturation |
+| | `\|μ\|` growth (max during / mean before) | n |
 |---|---|---|
-| crashing (7 runs) | **1.2–3.1×** | rises |
-| healthy (6 runs) | 1.11–1.27× | ~flat |
+| crashing | min **1.15**, median **1.81**, max **3.22** | 16 |
+| healthy | min **1.08**, median **1.15**, max **1.27** | 18 |
 
-⚠ **Pooling caveat.** These 13 runs come from three different families (Adam+natural,
-SGD+natural, SGD+Euclidean) with different optimizers, targets and σ floors, and
-"crashing"/"healthy" is the >400 peak-to-trough split of §4.1, not the §1b flag. The
-ranges do not overlap, but pooling heterogeneous configs at n=13 is weak support for
-a discrimination claim.
+Computed over all 34 runs in `trust_region_kl_natural` + `knob_fill_smin_vlr` +
+`gradclip_probe`, split by the >400 peak-to-trough rule of §4.1. `|μ|` is
+`diag/mu_abs_mean`; "growth" is the max during the decline window divided by the
+mean over the 150k steps before the peak (healthy runs use a fixed 500–750k window).
+
+⚠ **The ranges overlap** (crashing min 1.15 < healthy max 1.27): 2 crashing runs sit
+below the healthy maximum and 10 healthy runs sit above the crashing minimum. The
+best single threshold is 1.28, separating 32 of 34 runs (94%) — the medians are well
+apart (1.81 vs 1.15) but this is not a clean separator, and the split is measured on
+the same runs used to choose it.
+
+⚠ **Pooling caveat.** These runs come from three families (Adam+natural,
+SGD+natural, SGD+Euclidean) with different optimizers, targets and σ floors.
 
 **This is a signature, not a cause.** Saturation *level* does not discriminate —
-healthy `sminm10` seed 1 runs at 0.119 saturation and scores 911, *higher* than
-crashing seed 3's 0.099. Only the *growth* separates them, and `|μ|` growth could be
-cause, symptom, or bystander.
+healthy `sminm10` seed 1 runs at 0.116 saturation and scores 911, *higher* than
+crashing seed 3's 0.099. Only the *growth* separates them, imperfectly, and `|μ|`
+growth could be cause, symptom, or bystander.
 
 ---
 
