@@ -1,6 +1,5 @@
 # PCPG on HalfCheetah — complete experiment log
 
-
 **Context.** PCPG = predictive-coding policy gradient. The theoretical claim is that
 the PC weight update approximates a *natural gradient* at inference convergence. The
 empirical goal on HalfCheetah is not to beat PPO (PPO ≈ 4.4k @ 1M, PCPG ≈ 0.9k) but
@@ -22,8 +21,8 @@ advantage A ─▶ target = μ + ts·A·(z−μ)/σ²  ─▶ PC inference (max_
                              clip     (σ floor)                            (SGD only)
 ```
 
-Actions are `a = tanh(z)`, `z ~ N(μ,σ)` — the same squashed Gaussian distribution used
-by PPO in this repo (`NormalTanhDistribution`, `src/networks/distributions.py`)
+Actions are `a = tanh(z)`, `z ~ N(μ,σ)` — the *same* squashed-Gaussian PPO uses in
+this repo (`NormalTanhDistribution`, `src/networks/distributions.py`)
 
 ---
 
@@ -64,15 +63,34 @@ adaptive rescaling masks this (`kl_max` ≈ 0.4). (c) Adam has positive value-EV
 SGD strongly negative: two different critic regimes. (d) **PC-REINFORCE without a
 critic does not learn at bench scale** (finals 8–66) — the value head is essential.
 
+![baseline sweep](../results/trust_region_kl/learning_curve.png)
+*§3.1 all 16 baseline configs.*
+
 ### 3.2 `trust_region_kl_clip` — clip the policy gradient (9 configs, 26 runs)
 
 **Changed:** `train.max_grad_norm`: `null` → `1.0` (and `0.5` in one cell).
 
-**Where it acts:** `src/pc_algorithms/pc_actor_critic.py:194-196`. The policy
-optimizer is wrapped as
-`optax.chain(optax.clip_by_global_norm(c), sgd_or_adam(lr))`, so before every
-policy weight update the whole gradient vector `g` is rescaled by
-`min(1, c/‖g‖₂)`. The critic optimizer is untouched.
+**Where it acts:** `src/pc_algorithms/pc_actor_critic.py:192-197`. This is the whole
+change — the policy optimizer gets a clipping stage in front of it:
+
+```python
+make_optim   = optax.sgd if Config.optimizer == 'sgd' else optax.adam
+policy_optim = make_optim(Config.learning_rate)
+if Config.max_grad_norm is not None:                      # <-- the clip
+    policy_optim = optax.chain(
+        optax.clip_by_global_norm(float(Config.max_grad_norm)), policy_optim)
+...
+value_optim  = make_optim(Config.value_learning_rate)     # critic NOT clipped
+```
+
+So on every policy weight update, the full gradient vector `g` (all policy
+parameters) is rescaled by `min(1, c/‖g‖₂)` before the optimizer sees it: if the
+gradient is bigger than `c` it is shrunk to length `c`, otherwise it passes through
+untouched. The critic is never clipped. Nothing else in the update changes — not the
+target, not the inference, not the learning rate.
+
+Note this is a *global-norm* clip: it can only shrink the gradient's **length**, never
+change its **direction**. That distinction matters for the result below.
 
 **Question:** if collapses are caused by occasional huge weight updates, does
 bounding `‖g‖` prevent them?
@@ -92,10 +110,20 @@ because gradient norms sit at ~0.2–0.4. Earlier I attributed this to Adam
 renormalising the clip away; the real reason is simpler and stronger: **the threshold
 was above the gradient distribution.**
 
+> **Two clipping experiments, read them together.** §3.2 (here) is the flawed first
+> attempt: the threshold `1.0` was guessed, and it sat *above* the gradient
+> distribution, so for Adam it never fired, while the SGD cells used the wrong
+> learning rate. §3.6 is the corrected version: thresholds taken from the *measured*
+> gradient distribution, SGD at the working `lr=0.03`. **Only §3.6 actually tests
+> whether clipping helps.**
+
 **[verified] The SGD clip runs are confounded.** `config.yaml` shows
 `learning_rate: 0.0003` versus the working SGD baseline's `0.03` — **100× too small**.
 They died of the learning rate, not the clipping. This invalidated the sweep and
 motivated §3.6.
+
+![clip sweep](../results/trust_region_kl_clip/learning_curve.png)
+*§3.2 gradient clipping. SGD curves (lr=0.0003) are the flat lines at ~0.*
 
 ### 3.3 `trust_region_kl_tclip` — cap how far the target moves the mean (6 configs, 18 runs)
 
@@ -128,6 +156,9 @@ does capping that move prevent it?
 scale) but **never removes the collapse** — 1/3 in every cell. A bound in action space
 is not the missing constraint.
 
+![target clip](../results/trust_region_kl_tclip/learning_curve.png)
+*§3.3 target clip: higher peaks, one collapsing seed per cell.*
+
 ### 3.4 `trust_region_kl_stdglobal` — one shared σ instead of a per-state σ (8 configs, 24 runs)
 
 **Changed:** `agent.state_indep_std`: `false` → `true`.
@@ -156,6 +187,9 @@ to 0.91, negative returns. In this implementation PCPG performs dramatically wor
 with a state-independent σ. This is the
 strongest evidence that PCPG's instability is *not* a shared "MuJoCo/tanh" issue: the
 same parameterisation is fine for PPO in this codebase.
+
+![global sigma](../results/trust_region_kl_stdglobal/learning_curve.png)
+*§3.4 state-independent σ: Adam runs go strongly negative.*
 
 ### 3.5 `trust_region_kl_natural` — remove the `1/σ²` factor from the target ⭐ (4 configs, 12 runs)
 
@@ -203,6 +237,9 @@ optimizer-target interaction.** `mt80` adds seed variance without benefit.
 
 ![natural target](../results/trust_region_kl_natural/collapse_anatomy_sgd_tanh_ts10_bench_lr003_mt20_nat.png)
 
+![natural learning curve](../results/trust_region_kl_natural/learning_curve.png)
+*§3.5 natural target: the SGD mt20 curves are the tight bundle.*
+
 ### 3.6 `gradclip_probe` — Marco's check, done properly (4 configs, 10 runs)
 
 **Changed:** `train.max_grad_norm`: `null` → `10.24` / `4.39` / `1.46`, on
@@ -230,7 +267,7 @@ as Marco predicted.
 | 4.39 (p99) | 0.47% | 3.49 / 2.48 / 0.31 | 280 ± 503 | 2/3 |
 | 1.46 (p99/3) | **1.56%** | **0.46 / 0.53 / 0.37** | 272 ± 475 | 1/3 |
 
-**Finding.** The clip fired, yet collapses still occurred. At `max_grad_norm=1.46`
+**Finding.** The clip fired and did not prevent the collapse. At `max_grad_norm=1.46`
 it clipped 1.56% of all policy updates and reduced `kl_max` from 6–12 to ~0.4 — so the
 realised policy step per update dropped more than 10× — and mean returns remained
 essentially unchanged (267 → 294 → 280 → 272). Collapse count went 2/3 → 2/3 → 1/3,
@@ -238,13 +275,36 @@ which is within seed noise at n=3. Per seed, the outcome is determined by the se
 value: seed 2 collapses at all three thresholds (−285 / −371 / −257) and seed 3 does
 not collapse at any (855 / 855 / 895).
 
+**Why it did not work.** The clip does the one thing it can do — it shortens
+over-long gradients — and that was verifiably enough to bring the realised policy step
+down to natural-target levels (`kl_max` ~0.4, vs 0.04 for the natural target and 6–12
+unclipped). The returns did not follow. Two reasons are consistent with the data:
+
+1. **The collapse is gradual, not a single bad update.** In the collapsing runs the
+   eval return declines over ~250–500k steps while per-update KL stays small
+   (0.008–0.036 in the `sminm10` seed-3 window, §4.1). There is no single oversized
+   update for a clip to intercept — there is a long sequence of ordinary-sized ones
+   moving the policy in a consistent direction. A global-norm clip shortens each step
+   but does not change its direction, so it slows the walk without changing where it
+   goes.
+2. **The gradient norm carries no collapse information here.** Under the natural
+   target, seeds that collapse have gradient norms equal to or *lower* than seeds that
+   do not (§4.3: 0.204 → 0.199 while crashing, vs 0.264 healthy). A rule that
+   triggers on `‖g‖` cannot separate the two cases, whatever threshold you choose.
+
 **Conclusion: structural, not numerical.** Bounding step *magnitude* is not what the
-natural target provides (272 vs 781). Not ruled out: gradient *direction*, Adam
-preconditioning, per-parameter spikes, sample-level gradients.
+natural target provides (272 vs 781). What clipping does **not** touch, and what
+remains untested: gradient *direction* (e.g. whether consecutive gradients are
+strongly aligned, which would produce exactly the observed slow drift), Adam's
+preconditioned update size, per-parameter or per-sample spikes hidden inside the
+global norm.
 
 ![gradclip](../results/gradclip_probe/collapse_anatomy_sgd_euclid_mt20_lr003_clip1p4623.png)
 
-### 3.7 `knob_fill_smin_vlr` — raise the σ floor; change the critic's learning rate (4 configs, 12 runs)
+![gradclip curves](../results/gradclip_probe/learning_curve.png)
+*§3.6 all clip thresholds land in the same band.*
+
+### 3.7 `knob_fill_smin_vlr` — raise the min allowed σ; change the critic's learning rate (4 configs, 12 runs)
 
 Two independent changes, each aimed at one of the two observed failure patterns.
 
@@ -280,6 +340,10 @@ degrading `sgd ... mt80_nat` config.
 demonstrably active (`log_std_mean` −0.28 vs −0.79 baseline) yet collapse stays 1/3.
 Critic LR moves the mean but not the ±420 spread. Neither beats SGD+natural+mt20.
 
+![knob fill](../results/knob_fill_smin_vlr/learning_curve.png)
+![smin anatomy](../results/knob_fill_smin_vlr/collapse_anatomy_adam_tanh_ts10_bench_mt20_nat_sminm10.png)
+*§3.7 σ floor active (log_std ≈ −0.28) yet seed 3 still collapses at ~650k.*
+
 ### 3.8 5M-scale sweeps
 
 **`benchmark_halfcheetah_pcpg_5m_27runs_20260721`** (9 configs, 27 runs, 5M,
@@ -309,7 +373,12 @@ reliability. Critically, **SGD at lr=0.03 — the bench winner's LR — collapse
 catastrophic collapse — finals ≈ −500 to −600 on most seeds, saturation to **1.000**.
 Confirms §3.1: no critic ⇒ high ceiling, no floor.
 
+![5M sweep](../results/benchmark_halfcheetah_pcpg_5m_27runs_20260721/learning_curve.png)
+*§3.8 5M capacity-matched: higher peaks, collapses persist.*
+
 ---
+
+## 4. Verified claims---
 
 ## 4. Verified claims and their evidence
 
