@@ -126,8 +126,12 @@ are not dragged toward zero. Negative = moved *before* the return started fallin
 
 **`mu_target_mag` is the only signal that leads in both families** — the raw size of
 the offset the PC target asks for, ahead of the return turning in 14/17 Euclidean and
-**12/12** natural runs. In the natural family the lead is large and unanimous
-(median 442k steps).
+**12/12** natural runs.
+
+⚠ **The two leads are not equally meaningful.** Evals are 81.9k steps apart, so the
+Euclidean median lead of 57k is **0.7 eval points** — *below the resolution of the
+eval curve*, and not a usable warning. The natural-target lead of 442k is **5.4 eval
+points**, unanimous across 12 runs, and is the only result here with real lead time.
 
 **KL does not lead in either family.** Euclidean 7/17 (median *+106k*, i.e. it
 typically moves after the fall begins), natural 6/12 — a coin flip. Separately, the
@@ -141,8 +145,10 @@ by the time it moves, the return is usually already falling.
 
 ⚠ **Limits.** These quantities are mechanically coupled — the offset *is*
 `ts·A·(z−μ)/σ²` — so ordering them in time does not separate cause from arithmetic
-consequence. The Euclidean leads are short (median 57k ≈ 7 eval points) and the
-Euclidean `n` counts several near-duplicate trajectories across clip settings.
+consequence. Onset is located on the eval curve, which is sampled only every 81.9k
+steps, so any lead shorter than that is unresolvable (this is what sinks the
+Euclidean column). All 24 actor-critic runs in `trust_region_kl` were checked to be
+distinct trajectories, so the n=17 is not inflated by duplicates.
 
 *(Method note: an earlier version of this section reported larger leads from a
 "doubles from its post-minimum value" rule. That rule had two defects — zero-padded
