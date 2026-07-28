@@ -8,7 +8,8 @@ Related docs:
 
 - `docs/MUJOCO_IMPLEMENTATION.md` explains the Brax/MJX environment and backprop
   baselines.
-- `docs/PCPG_EXPLORATION_FINDINGS.md` records empirical HalfCheetah findings.
+- `docs/PCPG_EXPERIMENT_LOG.md` records every HalfCheetah run, with the numbers
+  verified against the seed logs.
 - `docs/PCPG_TUNING_METHODOLOGY.md` gives the formal staged tuning protocol.
 
 ---
