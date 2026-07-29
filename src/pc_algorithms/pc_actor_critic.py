@@ -16,6 +16,7 @@ import jpc
 from env import make_vec_env
 from utils.utils import EnvConfig
 from pc_algorithms import gaussian_policy as gpol
+from pc_algorithms.likelihood_energy import make_likelihood_pc_step
 from pc_algorithms.gaussian_policy import (
     LOG_STD_MAX,
     discrete_pc_targets,
@@ -90,6 +91,16 @@ class Config:
     # target_clip_rel=True makes the cap relative (|loc_target-mu| <= clip*sigma).
     target_clip = None
     target_clip_rel = False
+    # Likelihood-energy route (mutually exclusive with the target route above).
+    # False = build a target and let PC hit it with squared error (natural_target
+    # supplies the geometry). True = no target; PC's OUTPUT ENERGY becomes the
+    # advantage-weighted Gaussian NLL, so sigma enters the objective itself.
+    # Only this route tests "PC controls the geometry implicitly". Continuous only.
+    likelihood_energy = False
+    # 'signed' = A * NLL (faithful, unbounded below); 'exp' = exp(A/tau) * NLL
+    # (positive weights, bounded below; the RWR/MPO form).
+    likelihood_adv_mode = 'signed'
+    likelihood_tau = 1.0
     # Raise the log_std floor to tame the 1/sigma^2 amplifier (None = default -2;
     # e.g. -1 -> sigma_min 0.37, so 1/sigma^2 caps at ~7 instead of ~55).
     log_std_min = None
@@ -208,6 +219,12 @@ def main(_):
     # still emits 2*action_size, but its std head is frozen (PC-targeted to its
     # own output) and ignored; behavior uses this global vector instead.
     state_indep = continuous and Config.state_indep_std
+    use_likelihood = continuous and Config.likelihood_energy
+    if use_likelihood and state_indep:
+        raise ValueError("likelihood_energy does not support state_indep_std")
+    if use_likelihood and Config.natural_target:
+        raise ValueError("set natural_target=False when likelihood_energy=True: "
+                         "the energy supplies the geometry, not the target")
     policy_log_std = jnp.zeros((action_size,), dtype=jnp.float32)
 
     def _with_global_std(net_out):
@@ -372,6 +389,8 @@ def main(_):
                         dstd = dstd * 0.5  # F^-1 on log_std channel
                     policy_log_std = jnp.clip(
                         policy_log_std + dstd, gpol.LOG_STD_MIN, LOG_STD_MAX)
+                elif continuous and use_likelihood:
+                    policy_targets = None      # no target: the energy carries it
                 elif continuous:
                     policy_targets = gaussian_pc_targets(
                         params_mb, jnp.asarray(pre_tanh_flat[mb_idx]), mb_adv,
@@ -384,15 +403,26 @@ def main(_):
                         params_mb, jnp.asarray(actions_flat[mb_idx]).astype(jnp.int32),
                         mb_adv, action_size, Config.target_scale)
                 for _ in range(Config.pc_steps_per_update):
-                    policy_result = jpc.make_pc_step(
-                        model=policy_model,
-                        optim=policy_optim,
-                        opt_state=policy_opt_state,
-                        output=policy_targets,
-                        input=mb_obs,
-                        max_t1=Config.max_t1,
-                        grad_norms=True,
-                    )
+                    if use_likelihood:
+                        policy_result = make_likelihood_pc_step(
+                            policy_model, policy_optim, policy_opt_state,
+                            mb_obs, jnp.asarray(pre_tanh_flat[mb_idx]), mb_adv,
+                            action_dim=action_size,
+                            max_t1=Config.max_t1,
+                            exp_std=Config.exp_std,
+                            adv_mode=Config.likelihood_adv_mode,
+                            tau=Config.likelihood_tau,
+                        )
+                    else:
+                        policy_result = jpc.make_pc_step(
+                            model=policy_model,
+                            optim=policy_optim,
+                            opt_state=policy_opt_state,
+                            output=policy_targets,
+                            input=mb_obs,
+                            max_t1=Config.max_t1,
+                            grad_norms=True,
+                        )
                     policy_model, policy_opt_state = (
                         policy_result["model"], policy_result["opt_state"])
                     gnorm = _global_norm(policy_result["model_grad_norms"])

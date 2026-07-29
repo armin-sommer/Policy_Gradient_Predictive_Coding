@@ -1,0 +1,10 @@
+{
+  "config": "natural",
+  "commit": "bfd3d10746b16b2fd461f27cd255870761c8d9d6",
+  "base_config": "halfcheetah_pc_actor_critic_sgd_tanh_ts10_bench_lr003_mt20.yaml",
+  "overrides": {
+    "train.natural_target": true
+  },
+  "total_steps": 1000000,
+  "timestamp": "2026-07-29T17:15:53"
+}
