@@ -94,15 +94,31 @@ echo "=== batch done in ${MINS} min ==="
 # (a fine-grained PAT with Contents:read+write on this repo is enough).
 # Without it this block is skipped and the runpodctl fallback is printed.
 RESULT_BRANCH="results/overnight-$STAMP"
+# Always return to the branch we started on. Leaving the pod checked out on a
+# throwaway results branch strands the next `git pull` ("no tracking information").
+START_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"
+restore_branch () {
+    [ -n "$START_BRANCH" ] || return 0
+    [ "$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" = "$START_BRANCH" ] && return 0
+    git checkout -q "$START_BRANCH" 2>/dev/null \
+        && echo "returned to branch $START_BRANCH" \
+        || echo "!!! could not return to $START_BRANCH -- run: git checkout $START_BRANCH"
+}
 push_results () {
+    local rc=0
     git config user.email "${GIT_AUTHOR_EMAIL:-pod@runpod.local}"
     git config user.name  "${GIT_AUTHOR_NAME:-runpod batch}"
-    git checkout -b "$RESULT_BRANCH" || return 1
+    git checkout -q -b "$RESULT_BRANCH" || return 1
     git add -f results/gradclip_probe results/knob_fill_smin_vlr "$LOGDIR" 2>/dev/null
-    git commit -q -m "Overnight batch $STAMP: gradclip probe + knob fill results" || {
-        echo "nothing new to commit"; return 1; }
-    git push -q origin "$RESULT_BRANCH"
+    if git commit -q -m "Overnight batch $STAMP: gradclip probe + knob fill results"; then
+        git push -q origin "$RESULT_BRANCH" || rc=1
+    else
+        echo "nothing new to commit"; rc=1
+    fi
+    restore_branch          # <-- always, success or failure
+    return $rc
 }
+trap restore_branch EXIT    # <-- also on Ctrl-C or an unexpected exit
 
 stop_pod () {
     # Stops (does NOT terminate) this pod -> GPU billing ends, /workspace volume
@@ -130,7 +146,8 @@ if git ls-remote --exit-code origin >/dev/null 2>&1 && push_results; then
 else
     echo ""
     echo "!!! could not push (no write credentials on this pod, or nothing to commit)."
-    echo "!!! results exist ONLY on this pod's volume, at:"
+    echo "!!! if a commit was made it is on the LOCAL branch $RESULT_BRANCH;"
+    echo "!!! you are back on $START_BRANCH and the files are still on disk at:"
     echo "      $REPO_ROOT/results/{gradclip_probe,knob_fill_smin_vlr}"
     echo ""
     echo "  ==> STOP the pod (safe: /workspace persists, billed storage only)."
