@@ -18,14 +18,17 @@ below are the same.
 
 ---
 
-## 0. Prerequisite — push this branch
+## 0. Prerequisite — push your work
 
-A pod clones from GitHub, so `feature/mujoco-halfcheetah-pcpg` must exist on
-**origin** first (it currently only exists locally). From your Mac:
+A pod clones from GitHub, so anything you want to run must be pushed first. The
+branch `feature/mujoco-halfcheetah-pcpg` **is on origin**; just make sure your
+latest commits are too:
 
 ```bash
-git push -u origin feature/mujoco-halfcheetah-pcpg
+git push origin feature/mujoco-halfcheetah-pcpg
 ```
+
+If you edited code locally and the pod behaves like the old version, this is why.
 
 ---
 
@@ -139,8 +142,77 @@ thresholds aren't chosen, so for now you read the logs directly.
   ```
 
 There is **no established PCPG return target** for HalfCheetah — that is what you
-are measuring. Judge against the backprop baseline curves (HalfCheetah PPO reaches
-~2,500 on the Brax scale; see [RUNPOD.md](../RUNPOD.md)), not an absolute number.
+are measuring. Judge against the matched backprop baselines in this repo
+(`results/mujoco/`, same [64,64] net / 256 envs / 1M steps / 3 seeds):
+
+| | best per seed | mean |
+|---|---|---|
+| PPO | 1759 / 4360 / 2590 | 2903 |
+| TRPO | 1276 / 1408 / 1330 | 1338 |
+| best PCPG | 849 / 806 / 932 | 862 |
+
+So PCPG currently sits ~3x below PPO and ~1.5x below TRPO at that budget.
+
+---
+
+## 4b. The current experiment workflow (what the recent results used)
+
+§2–§4 describe the original tier sweep. Everything in
+[PCPG_EXPERIMENT_LOG.md](PCPG_EXPERIMENT_LOG.md) was produced with a different,
+config-per-cell workflow — one directory per condition, resolved config + logs
+stored together, then a shared analyzer.
+
+**Run a comparison sweep** (each writes `results/<dir>/<config>/seed_N.log`
+alongside the exact `config.yaml` and a `meta.json` with the git commit):
+
+```bash
+# the two open knobs: sigma floor (Adam mode) and critic LR (SGD mode)
+python scripts/run_pcpg_knob_fill.py --seeds 1 2 3 --skip-complete
+
+# gradient clipping, thresholds taken from the measured grad-norm tail
+python scripts/run_gradclip_probe.py --stage auto --seeds 1 2 3
+
+# target route vs likelihood-energy route (tests "does PC supply the geometry?")
+python scripts/run_likelihood_vs_natural.py --seeds 1 2 3 --skip-complete
+```
+
+**Analyze any of them** — this is the analyzer that defines `final`, `best`,
+`AUC`, `collapse` (see §1b of the experiment log for the exact definitions):
+
+```bash
+python scripts/analyze_pcpg_logs.py --results-dir results/<dir>
+#   -> per_run.csv, SUMMARY.md, learning_curve.png, diagnostic_plots.png
+
+python scripts/plot_collapse_anatomy.py --results-dir results/<dir>
+#   -> collapse_anatomy_<config>.png per config: seeds overlaid across
+#      eval return, train reward, value EV, KL, entropy, saturation
+```
+
+**Unattended overnight**, with auto-stop so it does not bill idle GPU:
+
+```bash
+tmux new -s overnight
+export RUNPOD_API_KEY=<key>          # see §6
+bash scripts/run_overnight_batch.sh  # gradclip + knob fill, ~2.5 h, then stops the pod
+```
+
+**Generate a new config cell** rather than hand-editing YAML:
+
+```bash
+python scripts/gen_benchmark_config.py --algo pc_actor_critic --tier bench \
+    --opt sgd --act tanh --ts 1.0 --max-t1 20 --lr 0.03 --natural-target
+# -> configs/benchmark/..._sgd_tanh_ts10_bench_lr003_mt20_nat.yaml
+```
+
+Naming gotcha: **`lr003` = 0.03**, `lr0003` = 0.003. The SGD baseline that learns
+needs `--lr 0.03`.
+
+**Checks that need no GPU** (useful before committing a long run):
+
+```bash
+PYTHONPATH=src python scripts/test_likelihood_energy.py      # likelihood step sanity
+python scripts/probe_pc_sample_weighting.py                  # per-sample weighting probe
+```
 
 ---
 
@@ -164,18 +236,35 @@ in the config.)
 
 ## 6. Pull results, then shut down
 
-**Terminate wipes the pod — pull first.** `summarize_mujoco.py` has already written
-the CSV + PNG into the results dir, so send the whole folder:
+**Stop and Terminate are not the same thing:**
+
+| action | GPU | `/workspace` | cost |
+|---|---|---|---|
+| **Stop** | released | **survives** | storage only (cents/day) |
+| **Terminate** | released | **destroyed permanently** | none |
+
+So **Stop is safe** — your results stay on the volume and are there when you
+restart. Only Terminate requires pulling first.
 
 ```bash
-# on the POD (the wrapper prints this line for you):
-runpodctl send results/mujoco_pcpg_halfcheetah
+# on the POD:
+runpodctl send results/<dir>
 # on your MAC:
 runpodctl receive <code>
 ```
 
 Install runpodctl on the Mac once: `brew install runpod/runpodctl/runpodctl`.
-Then **Pods → Terminate** to stop billing.
+
+**Auto-stop.** `scripts/run_overnight_batch.sh` stops the pod itself when the runs
+finish, so an overnight batch does not bill idle GPU until you notice. It needs an
+API key in the shell you launch from:
+
+```bash
+export RUNPOD_API_KEY=<key from runpod.io/console/user/settings>
+runpodctl get pod $RUNPOD_POD_ID     # must not say Unauthorized
+```
+
+The script preflights this and warns loudly at startup if it would fail.
 
 ---
 
@@ -185,9 +274,15 @@ Then **Pods → Terminate** to stop billing.
   `feature/mujoco-halfcheetah-pcpg` (push it first — §0)
 - **GPU:** A100 / H100 / L40S / RTX 4090 · **never** Blackwell · **CUDA 12.4** template
 - **JAX:** pinned **0.4.38** — never `pip install -U jax`
-- **One command:** `bash scripts/run_pcpg_runpod.sh [ENV] [TIERS] [SEEDS] [extra…]`
-- **Results:** `results/mujoco_pcpg_halfcheetah/` (per-run logs + `summary_all.csv`
-  + `halfcheetah_curve.png`)
+- **One command (tier sweep):** `bash scripts/run_pcpg_runpod.sh [ENV] [TIERS] [SEEDS] [extra…]`
+- **Comparison sweeps (§4b):** `run_pcpg_knob_fill.py`, `run_gradclip_probe.py`,
+  `run_likelihood_vs_natural.py`; analyze with `analyze_pcpg_logs.py` +
+  `plot_collapse_anatomy.py`
+- **Overnight, self-stopping:** `bash scripts/run_overnight_batch.sh` (needs
+  `RUNPOD_API_KEY`)
+- **Results:** `results/mujoco_pcpg_halfcheetah/` for the tier sweep;
+  `results/<experiment>/<config>/seed_N.log` for the comparison sweeps
+- **Stop ≠ Terminate:** Stop keeps `/workspace`; only Terminate needs a pull first
 - **Resume a killed sweep:** re-run the same command — `--skip-complete` skips
   finished runs.
 - **Troubleshooting:** same table as [RUNPOD.md §7](../RUNPOD.md) (CUDA/GPU/JAX
