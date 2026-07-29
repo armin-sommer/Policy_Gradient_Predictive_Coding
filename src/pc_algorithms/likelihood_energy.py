@@ -58,11 +58,22 @@ def _split_out(out, action_dim, exp_std=True, min_std=0.001):
 
 
 def _weights(advantages, mode, tau):
+    """Per-sample weights for the output energy.
+
+    'exp' MUST be renormalised to mean 1. Subtracting the max keeps exp() finite
+    but leaves the weights tiny -- with normalised advantages and tau=0.3 almost
+    all the mass lands on the single best sample, the total energy collapses, and
+    the update becomes a no-op. Measured without the renormalisation: kl_max
+    5e-5..4e-4 vs 0.03..0.06 for the target route, and |mu| did not move.
+    Dividing by the mean restores the energy scale while keeping the relative
+    weighting, which is what RWR/MPO do.
+    """
     if mode == "signed":
         return advantages
     if mode == "exp":
-        a = advantages - jnp.max(advantages)          # stabilise the exponential
-        return jnp.exp(a / tau)
+        a = advantages - jnp.max(advantages)          # keep exp() finite
+        w = jnp.exp(a / tau)
+        return w / (jnp.mean(w) + 1e-8)               # <-- restore the scale
     raise ValueError(f"unknown advantage mode: {mode}")
 
 
@@ -120,6 +131,11 @@ def make_likelihood_pc_step(model, optim, opt_state, obs, pre_tanh, advantages, 
 
     # 3. weight gradient at the settled activities, then optimiser step
     loss, grads = eqx.filter_value_and_grad(lambda m: E(m, activities))(model)
+    # `signed` is unbounded below, so it can run away; surface that as a clear
+    # non-finite loss rather than 11 minutes of astronomically large updates.
+    loss = eqx.error_if(loss, ~jnp.isfinite(loss),
+                        "likelihood energy diverged (non-finite). With "
+                        "adv_mode='signed' the energy is unbounded below.")
     updates, opt_state = optim.update(
         (grads, None), opt_state, (eqx.filter(model, eqx.is_array), None))
     model = eqx.apply_updates(model, updates[0])

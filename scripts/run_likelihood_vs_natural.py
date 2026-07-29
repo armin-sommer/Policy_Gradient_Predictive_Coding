@@ -16,14 +16,18 @@ Cells:
   natural            A, the baseline
   likelihood_signed  B with E = sum_i A_i * NLL_i
   likelihood_exp1    B with E = sum_i exp(A_i/1.0) * NLL_i   (RWR/MPO form)
-  likelihood_exp03   B with tau=0.3 (sharper weighting)
+  likelihood_exp3    B with tau=3.0 (flatter weighting)
 
-WARNING on `signed`: with signed advantages the energy is unbounded below -- a
-negative advantage rewards fleeing that sample. scripts/test_likelihood_energy.py
-shows this concretely: one step at A=-2 moved |mu - z| from 0.84 to 30.8. Finite
-max_t1 is the only thing bounding it. Expect `signed` to be unstable; it is
-included because it is the faithful policy-gradient form, and its failure mode is
-itself informative. The `exp` cells are the ones expected to be trainable.
+WARNING on `signed`: the energy is unbounded below -- a negative advantage rewards
+fleeing that sample without limit. The first run of this sweep confirmed it
+spectacularly: kl_max reached 4e22..3e26 and |mu| reached 1.8e10. It is kept
+because it is the faithful policy-gradient form and its failure is the result,
+but it now aborts on a non-finite loss instead of burning a full run.
+
+NOTE on tau: weights are exp((A - max A)/tau), renormalised to mean 1. tau
+controls how concentrated the weighting is -- at tau=0.3, 82% of the mass sits on
+the top 1% of samples (effective batch ~20 of 2048), which is why 0.3 was replaced
+by 3.0. At tau=1 the top 1% carries ~10%.
 
 Usage (pod):
     python scripts/run_likelihood_vs_natural.py --seeds 1 2 3 --skip-complete
@@ -61,10 +65,10 @@ def cells():
                                "train.likelihood_energy": True,
                                "train.likelihood_adv_mode": "exp",
                                "train.likelihood_tau": 1.0}),
-        ("likelihood_exp03",  {"train.natural_target": False,
+        ("likelihood_exp3",   {"train.natural_target": False,
                                "train.likelihood_energy": True,
                                "train.likelihood_adv_mode": "exp",
-                               "train.likelihood_tau": 0.3}),
+                               "train.likelihood_tau": 3.0}),
     ]
 
 
