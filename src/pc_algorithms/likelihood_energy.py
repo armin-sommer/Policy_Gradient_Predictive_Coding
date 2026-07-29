@@ -86,7 +86,14 @@ def policy_energy(model, activities, obs, pre_tanh, advantages, *,
         err = activities[l] - jax.vmap(model[l])(activities[l - 1])
         energy = energy + 0.5 * jnp.sum(jnp.square(err))
     err0 = activities[0] - jax.vmap(model[0])(obs)
-    return energy + 0.5 * jnp.sum(jnp.square(err0))
+    energy = energy + 0.5 * jnp.sum(jnp.square(err0))
+
+    # jpc normalises the total energy by the batch size:
+    #     total_energy = sum(energies) / batch_size
+    # (see the end of jpc.pc_energy_fn). Without this the gradients are
+    # batch_size times too large -- at bench scale that is ~2048x, which blows the
+    # policy up on the very first update.
+    return energy / obs.shape[0]
 
 
 def make_likelihood_pc_step(model, optim, opt_state, obs, pre_tanh, advantages, *,
