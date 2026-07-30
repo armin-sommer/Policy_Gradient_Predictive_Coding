@@ -38,6 +38,7 @@ Usage (pod):
 """
 
 import argparse
+import os
 import datetime
 import json
 import re
@@ -51,7 +52,8 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BASE_CFG = REPO_ROOT / "configs" / "benchmark" / (
     "halfcheetah_pc_actor_critic_sgd_tanh_ts10_bench_lr003_mt20.yaml")
-RESULTS = REPO_ROOT / "results" / "likelihood_vs_natural"
+# PCPG_RESULTS_ROOT lets a pod write outside the tracked results/ tree.
+RESULTS = REPO_ROOT / os.environ.get("PCPG_RESULTS_ROOT", "results") / "likelihood_vs_natural"
 EXPECTED_TOTAL = 1_000_000
 
 

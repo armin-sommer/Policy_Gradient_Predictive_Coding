@@ -38,6 +38,7 @@ be tested there.
 """
 
 import argparse
+import os
 import ast
 import datetime
 import json
@@ -55,7 +56,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 # SGD, lr=0.03 (the LR that actually learns), Euclidean target -> keeps 1/sigma^2.
 BASE_CFG = REPO_ROOT / "configs" / "benchmark" / (
     "halfcheetah_pc_actor_critic_sgd_tanh_ts10_bench_lr003_mt20.yaml")
-RESULTS = REPO_ROOT / "results" / "gradclip_probe"
+# PCPG_RESULTS_ROOT lets a pod write outside the tracked results/ tree.
+RESULTS = REPO_ROOT / os.environ.get("PCPG_RESULTS_ROOT", "results") / "gradclip_probe"
 MEASURE_NAME = "sgd_euclid_mt20_lr003_noclip_measure"
 
 

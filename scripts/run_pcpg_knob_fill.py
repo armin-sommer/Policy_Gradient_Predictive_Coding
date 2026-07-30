@@ -22,6 +22,7 @@ Each bench run is ~7 min, so 4 configs x 3 seeds ~= 1.4 h.
 """
 
 import argparse
+import os
 import datetime
 import json
 import re
@@ -94,7 +95,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--seeds", nargs="+", type=int, default=[1, 2, 3])
     ap.add_argument("--results-dir",
-                    default=str(REPO_ROOT / "results" / "knob_fill_smin_vlr"))
+                    default=str(REPO_ROOT
+                                / os.environ.get("PCPG_RESULTS_ROOT", "results")
+                                / "knob_fill_smin_vlr"))
     ap.add_argument("--skip-complete", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()

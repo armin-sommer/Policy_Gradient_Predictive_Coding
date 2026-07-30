@@ -155,6 +155,40 @@ So PCPG currently sits ~3x below PPO and ~1.5x below TRPO at that budget.
 
 ---
 
+## 4a. Set this once per pod session — it prevents `git pull` from breaking
+
+`results/` is tracked in git (the experiment log embeds plots from it). If a pod
+writes sweeps into the same paths, the next `git pull` fails with
+
+    error: The following untracked working tree files would be overwritten by merge
+
+because git wants to write files the pod already generated. Avoid it entirely by
+sending pod output to a gitignored root:
+
+```bash
+export PCPG_RESULTS_ROOT=results_pod
+```
+
+All the §4b sweeps honour it (`results_pod/<experiment>/...`), and `results_pod/`
+is in `.gitignore`, so the pod's tree never collides with the tracked one. Then
+transfer and commit from your Mac:
+
+```bash
+# on the POD
+runpodctl send results_pod/<experiment>
+# on your MAC -- lands in the tracked results/ tree
+cd results && runpodctl receive <code>
+```
+
+**If you already hit the collision**, the data is on GitHub and/or your Mac, so it
+is safe to clear the pod's copy:
+
+```bash
+git checkout -- . && rm -rf results/<colliding-dir> && git pull
+```
+
+---
+
 ## 4b. The current experiment workflow (what the recent results used)
 
 §2–§4 describe the original tier sweep. Everything in
@@ -283,6 +317,8 @@ The script preflights this and warns loudly at startup if it would fail.
 - **Results:** `results/mujoco_pcpg_halfcheetah/` for the tier sweep;
   `results/<experiment>/<config>/seed_N.log` for the comparison sweeps
 - **Stop ≠ Terminate:** Stop keeps `/workspace`; only Terminate needs a pull first
+- **`export PCPG_RESULTS_ROOT=results_pod`** once per pod session (§4a) — keeps
+  `git pull` from colliding with the tracked `results/` tree
 - **Resume a killed sweep:** re-run the same command — `--skip-complete` skips
   finished runs.
 - **Troubleshooting:** same table as [RUNPOD.md §7](../RUNPOD.md) (CUDA/GPU/JAX

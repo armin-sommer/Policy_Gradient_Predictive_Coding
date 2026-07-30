@@ -3,3 +3,10 @@ __pycache__/
 outputs/
 experiments/
 .DS_Store
+
+# Pod scratch results root. Set PCPG_RESULTS_ROOT=results_pod on a pod so sweeps
+# never write into the tracked results/ tree -- that collision is what makes
+# `git pull` fail on the pod with "untracked working tree files would be
+# overwritten". Transfer results_pod/ to the Mac with runpodctl, then commit from
+# there into results/.
+results_pod/
