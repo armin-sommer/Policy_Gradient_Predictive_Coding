@@ -38,6 +38,7 @@ contribution scales ~linearly with the weight (1.0 / 1.79 / 4.87 / 10.98 for
 weights 1 / 2 / 5 / 10). That is what makes this route viable at all.
 """
 
+import diffrax
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -108,9 +109,26 @@ def policy_energy(model, activities, obs, pre_tanh, advantages, *,
 
 
 def make_likelihood_pc_step(model, optim, opt_state, obs, pre_tanh, advantages, *,
-                            action_dim, max_t1=20, dt=0.05, exp_std=True,
-                            adv_mode="signed", tau=1.0):
+                            action_dim, max_t1=20, dt=None, exp_std=True,
+                            adv_mode="signed", tau=1.0,
+                            rtol=1e-3, atol=1e-3):
     """One PC update using the likelihood energy. Mirrors `jpc.make_pc_step`.
+
+    Inference uses the SAME scheme as jpc: integrate dz/dt = -dF/dz from t=0 to
+    t=max_t1 with an adaptive Heun solver + PID controller. Two earlier bugs made
+    this the wrong comparison:
+
+      * `max_t1` in jpc is the integration END TIME handed to diffeqsolve, not a
+        step count. A loop of `max_t1` fixed steps of dt=0.05 integrates to t=1.0,
+        i.e. 20x less far than jpc's t=20.
+      * explicit Euler at dt=0.05 is UNSTABLE for this energy once sigma is small.
+        The output term has curvature ~1/sigma^2, and Euler needs dt < 2/k, i.e.
+        sigma > sqrt(2*dt) = 0.316. The sigma floor here is exp(-2) = 0.135, well
+        inside the unstable region, so late in training the settling diverged
+        rather than converged.
+
+    An adaptive solver fixes both: it integrates the full interval and shrinks its
+    internal step where the dynamics are stiff.
 
     Returns a dict with the same keys the caller already uses.
     """
@@ -122,12 +140,20 @@ def make_likelihood_pc_step(model, optim, opt_state, obs, pre_tanh, advantages, 
     # 1. initialise activities with a feedforward pass (as jpc does)
     activities = jpc.init_activities_with_ffwd(model=model, input=obs)
 
-    # 2. inference: settle the activities, dz/dt = -dF/dz
+    # 2. inference: integrate dz/dt = -dF/dz to t=max_t1, adaptive (as jpc does)
     grad_z = jax.grad(lambda acts: E(model, acts))
-    def body(acts, _):
-        g = grad_z(acts)
-        return [a - dt * gi for a, gi in zip(acts, g)], None
-    activities, _ = jax.lax.scan(body, activities, None, length=max_t1)
+    def vector_field(t, y, args):
+        return [-g for g in grad_z(y)]
+    activities = diffrax.diffeqsolve(
+        terms=diffrax.ODETerm(vector_field),
+        solver=diffrax.Heun(),
+        t0=0, t1=max_t1, dt0=dt,
+        y0=activities,
+        stepsize_controller=diffrax.PIDController(rtol=rtol, atol=atol),
+        saveat=diffrax.SaveAt(t1=True),
+        max_steps=8192,
+    ).ys
+    activities = [a[0] for a in activities]     # SaveAt(t1=True) adds a time axis
 
     # 3. weight gradient at the settled activities, then optimiser step
     loss, grads = eqx.filter_value_and_grad(lambda m: E(m, activities))(model)
