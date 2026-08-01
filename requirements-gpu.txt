@@ -1,0 +1,21 @@
+# GPU dependency pins for the MuJoCo backprop baselines (Brax/MJX).
+#
+# Versions are the ones frozen in docs/BENCHMARK_PROTOCOL.md §1 — every run in
+# results/mujoco/ was produced with these. Do NOT bump jax: 0.4.38 is required
+# by the algorithms' pmap code, and jpc needs jax <= 0.5.2.
+#
+# Install with `--ignore-installed blinker`: the OS-installed blinker has no
+# RECORD file, so pip cannot uninstall it and aborts the whole transaction.
+#
+# This installs the CUDA 12.x nvidia wheels as a side effect, but resolves them
+# to 12.8/12.9, which segfault against jaxlib 0.4.38. Always follow up with
+# requirements-cuda124.txt to force the matching 12.4 libraries.
+jax[cuda12]==0.4.38
+jaxlib==0.4.38
+brax==0.11.0
+mujoco==3.2.7
+mujoco-mjx==3.2.7
+numpy<2.0
+pyyaml
+matplotlib
+wandb

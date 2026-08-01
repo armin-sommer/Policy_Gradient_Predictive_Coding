@@ -21,12 +21,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /workspace/PCPG
 
 # Copy pyproject first for layer caching on dep changes only.
-COPY pyproject.toml requirements-gpu.txt ./
+COPY pyproject.toml requirements-gpu.txt requirements-cuda124.txt ./
 COPY src/ ./src/
 
 RUN python -m pip install --upgrade pip setuptools wheel \
     && pip install -e . \
-    && pip install -r requirements-gpu.txt
+    && pip install --ignore-installed blinker -r requirements-gpu.txt \
+    && pip install --force-reinstall --no-deps -r requirements-cuda124.txt
 
 COPY . .
 
