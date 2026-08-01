@@ -1,0 +1,161 @@
+
+====================================================================================================
+regime=init  seed=0  n=256  params=1932  layers=2  sigma=[0.419, 1.649]  raw log_std out of bounds: 1.8%
+policy-gradient reference separations (lam=1):  cos(d_SGD,d_NG)=0.925  cos(d_OUT,d_NG)=0.850  cos(d_SGD,d_OUT)=0.883
+
+-- target family: Euclidean (with 1/sigma^2)
+   target fidelity (u_eff vs dL/dout): mu-half 1.0000, log_std-half 0.6965 (log_std target-clip truncation)
+   cos(d_BP, d_SGD)=0.6958   ceilings: cos(d_EQ, d_NG)=0.6955 (lam*=1e+01), cos(d_BP, d_NG)=0.7000 (lam*=1e+01)
+    t1     t1/N      resid      energy  z-shift    |Delta|    shL   cos_BP   cos_EQ  cos_SGD  cos_OUT  cos_NG*     lam*  cosF_NG*
+     0    0.000   1.00e+00  5.5533e+00   0.0000  9.619e-01  1.000   0.8949   0.9005   0.6000   0.5683   0.6003  1.0e+02    0.5707
+       anchor t1=0: share_last=1.000000 (expect 1.0), cos(last-layer block vs d_BP)=1.000000 (expect 1.0)
+     1    0.004   9.95e-01  5.5432e+00   0.0013  9.611e-01  1.000   0.8957   0.9013   0.6008   0.5688   0.6010  1.0e+02    0.5708
+     5    0.020   9.75e-01  5.5038e+00   0.0065  9.586e-01  1.000   0.8987   0.9043   0.6034   0.5706   0.6037  1.0e+02    0.5709
+    20    0.078   9.04e-01  5.3695e+00   0.0250  9.546e-01  0.999   0.9045   0.9099   0.6096   0.5737   0.6102  1.0e+01    0.5747
+    80    0.312   6.62e-01  4.9997e+00   0.0860  9.881e-01  0.992   0.8769   0.8817   0.5973   0.5542   0.5996  1.0e+01    0.5712
+   320    1.250   1.95e-01  4.6080e+00   0.2036  1.169e+00  0.968   0.7346   0.7382   0.5070   0.4588   0.5112  1.0e+01    0.5468
+  1280    5.000   5.57e-03  4.5667e+00   0.2526  1.259e+00  0.955   0.6688   0.6720   0.4620   0.4138   0.4666  1.0e+01    0.5301
+  4096   16.000   6.89e-03  4.5667e+00   0.2534  1.261e+00  0.955   0.6673   0.6705   0.4609   0.4127   0.4654  1.0e+01    0.5296
+       per-layer at t_last: L0[share 0.30 cosEQ 0.949 cosNG 0.642]  L1[share 0.96 cosEQ 0.638 cosNG 0.420]
+       cos(Delta(t_last), d_NG[lam]) by lam:  1e-03:0.061  1e-02:0.088  1e-01:0.214  1e+00:0.440  1e+01:0.465  1e+02:0.462
+
+-- target family: natural (no 1/sigma^2)
+   target fidelity (u_eff vs dL/dout): mu-half 1.0000, log_std-half 0.7857 (log_std target-clip truncation)
+   cos(d_BP, d_OUT)=0.8887   ceilings: cos(d_EQ, d_NG)=0.7121 (lam*=1e+01), cos(d_BP, d_NG)=0.7138 (lam*=1e+01)
+    t1     t1/N      resid      energy  z-shift    |Delta|    shL   cos_BP   cos_EQ  cos_SGD  cos_OUT  cos_NG*     lam*  cosF_NG*
+     0    0.000   1.00e+00  3.5834e+00   0.0000  6.614e-01  1.000   0.8740   0.8807   0.6139   0.7686   0.6183  1.0e+01    0.6729
+       anchor t1=0: share_last=1.000000 (expect 1.0), cos(last-layer block vs d_BP)=1.000000 (expect 1.0)
+     1    0.004   9.95e-01  3.5768e+00   0.0011  6.606e-01  1.000   0.8751   0.8818   0.6148   0.7695   0.6193  1.0e+01    0.6731
+     5    0.020   9.75e-01  3.5510e+00   0.0053  6.580e-01  1.000   0.8788   0.8854   0.6183   0.7731   0.6229  1.0e+01    0.6739
+    20    0.078   9.04e-01  3.4627e+00   0.0202  6.522e-01  0.999   0.8871   0.8937   0.6271   0.7815   0.6323  1.0e+01    0.6763
+    80    0.312   6.66e-01  3.2188e+00   0.0698  6.685e-01  0.990   0.8643   0.8702   0.6206   0.7644   0.6273  1.0e+01    0.6775
+   320    1.250   1.96e-01  2.9576e+00   0.1660  7.947e-01  0.959   0.7147   0.7189   0.5288   0.6360   0.5364  1.0e+01    0.6616
+  1280    5.000   1.05e-02  2.9303e+00   0.2061  8.603e-01  0.944   0.6460   0.6496   0.4854   0.5760   0.4928  1.0e+01    0.6518
+  4096   16.000   4.66e-03  2.9301e+00   0.2073  8.620e-01  0.943   0.6433   0.6467   0.4843   0.5736   0.4917  1.0e+01    0.6522
+       per-layer at t_last: L0[share 0.33 cosEQ 0.952 cosNG 0.663]  L1[share 0.94 cosEQ 0.598 cosNG 0.451]
+       cos(Delta(t_last), d_NG[lam]) by lam:  1e-03:0.083  1e-02:0.117  1e-01:0.252  1e+00:0.477  1e+01:0.492  1e+02:0.485
+
+====================================================================================================
+regime=mixed  seed=0  n=256  params=1932  layers=2  sigma=[0.135, 1.162]  raw log_std out of bounds: 0.8%
+policy-gradient reference separations (lam=1):  cos(d_SGD,d_NG)=0.622  cos(d_OUT,d_NG)=0.723  cos(d_SGD,d_OUT)=0.666
+
+-- target family: Euclidean (with 1/sigma^2)
+   target fidelity (u_eff vs dL/dout): mu-half 1.0000, log_std-half 0.7455 (log_std target-clip truncation)
+   cos(d_BP, d_SGD)=0.9534   ceilings: cos(d_EQ, d_NG)=0.9312 (lam*=1e+02), cos(d_BP, d_NG)=0.9397 (lam*=1e+02)
+    t1     t1/N      resid      energy  z-shift    |Delta|    shL   cos_BP   cos_EQ  cos_SGD  cos_OUT  cos_NG*     lam*  cosF_NG*
+     0    0.000   1.00e+00  3.5570e+01   0.0000  2.018e+00  1.000   0.8842   0.8919   0.8383   0.4337   0.8206  1.0e+02    0.9669
+       anchor t1=0: share_last=1.000000 (expect 1.0), cos(last-layer block vs d_BP)=1.000000 (expect 1.0)
+     1    0.004   9.95e-01  3.5505e+01   0.0029  2.018e+00  1.000   0.8849   0.8925   0.8390   0.4335   0.8213  1.0e+02    0.9674
+     5    0.020   9.75e-01  3.5250e+01   0.0144  2.031e+00  1.000   0.8817   0.8894   0.8362   0.4300   0.8188  1.0e+02    0.9673
+    20    0.078   9.01e-01  3.4387e+01   0.0554  2.227e+00  0.999   0.8097   0.8172   0.7686   0.3885   0.7530  1.0e+02    0.9413
+    80    0.312   6.32e-01  3.2095e+01   0.1879  3.669e+00  0.997   0.4898   0.4953   0.4657   0.2227   0.4565  1.0e+02    0.7306
+   320    1.250   1.55e-01  3.0077e+01   0.4097  6.236e+00  0.995   0.2622   0.2662   0.2492   0.1094   0.2445  1.0e+02    0.4495
+  1280    5.000   1.12e-02  2.9905e+01   0.4819  6.940e+00  0.994   0.2198   0.2236   0.2087   0.0878   0.2047  1.0e+02    0.3861
+  4096   16.000   2.80e-03  2.9900e+01   0.4849  6.969e+00  0.993   0.2163   0.2200   0.2053   0.0864   0.2015  1.0e+02    0.3779
+       per-layer at t_last: L0[share 0.11 cosEQ 0.807 cosNG 0.338]  L1[share 0.99 cosEQ 0.201 cosNG 0.092]
+       cos(Delta(t_last), d_NG[lam]) by lam:  1e-03:0.016  1e-02:0.032  1e-01:0.047  1e+00:0.095  1e+01:0.170  1e+02:0.201
+
+-- target family: natural (no 1/sigma^2)
+   target fidelity (u_eff vs dL/dout): mu-half 1.0000, log_std-half 0.8333 (log_std target-clip truncation)
+   cos(d_BP, d_OUT)=0.8211   ceilings: cos(d_EQ, d_NG)=0.6974 (lam*=1e+01), cos(d_BP, d_NG)=0.7092 (lam*=1e+01)
+    t1     t1/N      resid      energy  z-shift    |Delta|    shL   cos_BP   cos_EQ  cos_SGD  cos_OUT  cos_NG*     lam*  cosF_NG*
+     0    0.000   1.00e+00  1.2730e+00   0.0000  4.379e-01  1.000   0.8938   0.9002   0.5181   0.7164   0.6036  1.0e+01    0.7184
+       anchor t1=0: share_last=1.000000 (expect 1.0), cos(last-layer block vs d_BP)=1.000000 (expect 1.0)
+     1    0.004   9.95e-01  1.2707e+00   0.0005  4.375e-01  1.000   0.8947   0.9011   0.5188   0.7174   0.6044  1.0e+01    0.7187
+     5    0.020   9.75e-01  1.2620e+00   0.0027  4.360e-01  1.000   0.8980   0.9044   0.5213   0.7210   0.6076  1.0e+01    0.7195
+    20    0.078   9.05e-01  1.2320e+00   0.0103  4.315e-01  0.999   0.9084   0.9146   0.5294   0.7329   0.6180  1.0e+01    0.7223
+    80    0.312   6.70e-01  1.1491e+00   0.0356  4.249e-01  0.991   0.9253   0.9311   0.5458   0.7579   0.6403  1.0e+01    0.7286
+   320    1.250   2.05e-01  1.0573e+00   0.0858  4.416e-01  0.951   0.8922   0.8969   0.5365   0.7497   0.6355  1.0e+01    0.7317
+  1280    5.000   4.91e-03  1.0474e+00   0.1079  4.574e-01  0.925   0.8587   0.8630   0.5196   0.7282   0.6179  1.0e+01    0.7302
+  4096   16.000   7.49e-03  1.0474e+00   0.1080  4.574e-01  0.925   0.8583   0.8626   0.5193   0.7278   0.6175  1.0e+01    0.7301
+       per-layer at t_last: L0[share 0.38 cosEQ 0.985 cosNG 0.512]  L1[share 0.92 cosEQ 0.840 cosNG 0.539]
+       cos(Delta(t_last), d_NG[lam]) by lam:  1e-03:0.077  1e-02:0.114  1e-01:0.212  1e+00:0.511  1e+01:0.618  1e+02:0.545
+
+====================================================================================================
+regime=floor  seed=0  n=256  params=1932  layers=2  sigma=[0.135, 0.297]  raw log_std out of bounds: 50.7%
+policy-gradient reference separations (lam=1):  cos(d_SGD,d_NG)=0.341  cos(d_OUT,d_NG)=0.500  cos(d_SGD,d_OUT)=0.415
+
+-- target family: Euclidean (with 1/sigma^2)
+   target fidelity (u_eff vs dL/dout): mu-half 1.0000, log_std-half 0.3739 (log_std target-clip truncation)
+   cos(d_BP, d_SGD)=0.9376   ceilings: cos(d_EQ, d_NG)=0.9074 (lam*=1e+02), cos(d_BP, d_NG)=0.9151 (lam*=1e+02)
+    t1     t1/N      resid      energy  z-shift    |Delta|    shL   cos_BP   cos_EQ  cos_SGD  cos_OUT  cos_NG*     lam*  cosF_NG*
+     0    0.000   1.00e+00  1.4007e+02   0.0000  4.289e+00  1.000   0.8800   0.8866   0.8101   0.2247   0.7780  1.0e+02    0.9711
+       anchor t1=0: share_last=1.000000 (expect 1.0), cos(last-layer block vs d_BP)=1.000000 (expect 1.0)
+     1    0.004   9.95e-01  1.3981e+02   0.0047  4.292e+00  1.000   0.8801   0.8867   0.8104   0.2246   0.7784  1.0e+02    0.9715
+     5    0.020   9.75e-01  1.3878e+02   0.0232  4.381e+00  1.000   0.8648   0.8712   0.7971   0.2200   0.7657  1.0e+02    0.9681
+    20    0.078   8.85e-01  1.3535e+02   0.0884  5.456e+00  1.000   0.6938   0.6990   0.6410   0.1742   0.6158  1.0e+02    0.9040
+    80    0.312   5.47e-01  1.2734e+02   0.2836  1.071e+01  0.999   0.3260   0.3291   0.3008   0.0780   0.2895  1.0e+02    0.5928
+   320    1.250   1.12e-01  1.2213e+02   0.5478  1.685e+01  0.998   0.1674   0.1693   0.1525   0.0356   0.1477  1.0e+02    0.3330
+  1280    5.000   6.24e-03  1.2175e+02   0.6163  1.814e+01  0.997   0.1418   0.1436   0.1287   0.0287   0.1249  1.0e+02    0.2835
+  4096   16.000   3.22e-03  1.2175e+02   0.6184  1.817e+01  0.997   0.1403   0.1421   0.1272   0.0283   0.1236  1.0e+02    0.2807
+       per-layer at t_last: L0[share 0.08 cosEQ 0.730 cosNG 0.127]  L1[share 1.00 cosEQ 0.130 cosNG 0.003]
+       cos(Delta(t_last), d_NG[lam]) by lam:  1e-03:-0.014  1e-02:-0.010  1e-01:-0.001  1e+00:0.010  1e+01:0.078  1e+02:0.124
+
+-- target family: natural (no 1/sigma^2)
+   target fidelity (u_eff vs dL/dout): mu-half 1.0000, log_std-half 0.3898 (log_std target-clip truncation)
+   cos(d_BP, d_OUT)=0.0694   ceilings: cos(d_EQ, d_NG)=0.0913 (lam*=1e+02), cos(d_BP, d_NG)=0.0972 (lam*=1e+02)
+    t1     t1/N      resid      energy  z-shift    |Delta|    shL   cos_BP   cos_EQ  cos_SGD  cos_OUT  cos_NG*     lam*  cosF_NG*
+     0    0.000   1.00e+00  8.4811e-01   0.0000  1.029e+00  1.000   0.9400   0.9414   0.0747   0.0475   0.0740  1.0e+02    0.5354
+       anchor t1=0: share_last=1.000000 (expect 1.0), cos(last-layer block vs d_BP)=1.000000 (expect 1.0)
+     1    0.004   9.95e-01  8.4670e-01   0.0003  1.028e+00  1.000   0.9405   0.9418   0.0748   0.0477   0.0741  1.0e+02    0.5356
+     5    0.020   9.76e-01  8.4121e-01   0.0017  1.023e+00  1.000   0.9423   0.9438   0.0753   0.0485   0.0747  1.0e+02    0.5364
+    20    0.078   9.07e-01  8.2241e-01   0.0065  1.007e+00  1.000   0.9488   0.9503   0.0770   0.0513   0.0766  1.0e+02    0.5391
+    80    0.312   6.79e-01  7.6977e-01   0.0227  9.588e-01  0.995   0.9667   0.9685   0.0826   0.0608   0.0829  1.0e+02    0.5462
+   320    1.250   2.16e-01  7.0946e-01   0.0553  8.890e-01  0.963   0.9796   0.9817   0.0926   0.0794   0.0945  1.0e+02    0.5554
+  1280    5.000   6.40e-03  7.0246e-01   0.0703  8.703e-01  0.937   0.9717   0.9739   0.0960   0.0867   0.0986  1.0e+02    0.5589
+  4096   16.000   5.92e-03  7.0245e-01   0.0706  8.701e-01  0.936   0.9715   0.9736   0.0960   0.0868   0.0986  1.0e+02    0.5590
+       per-layer at t_last: L0[share 0.35 cosEQ 0.998 cosNG 0.059]  L1[share 0.94 cosEQ 0.971 cosNG 0.024]
+       cos(Delta(t_last), d_NG[lam]) by lam:  1e-03:-0.000  1e-02:-0.001  1e-01:0.000  1e+00:0.031  1e+01:0.088  1e+02:0.099
+
+====================================================================================================
+regime=fixed  seed=0  n=256  params=1932  layers=2  sigma=[1.000, 1.000]  raw log_std out of bounds: 0.0%
+policy-gradient reference separations (lam=1):  cos(d_SGD,d_NG)=0.941  cos(d_OUT,d_NG)=0.933  cos(d_SGD,d_OUT)=0.944
+
+-- target family: Euclidean (with 1/sigma^2)
+   target fidelity (u_eff vs dL/dout): mu-half 1.0000, log_std-half 0.6995 (log_std target-clip truncation)
+   cos(d_BP, d_SGD)=0.6451   ceilings: cos(d_EQ, d_NG)=0.6318 (lam*=1e+00), cos(d_BP, d_NG)=0.6695 (lam*=1e+00)
+    t1     t1/N      resid      energy  z-shift    |Delta|    shL   cos_BP   cos_EQ  cos_SGD  cos_OUT  cos_NG*     lam*  cosF_NG*
+     0    0.000   1.00e+00  4.3891e+00   0.0000  8.774e-01  1.000   0.9361   0.9465   0.5735   0.6352   0.5847  1.0e+01    0.4326
+       anchor t1=0: share_last=1.000000 (expect 1.0), cos(last-layer block vs d_BP)=1.000000 (expect 1.0)
+     1    0.004   9.95e-01  4.3835e+00   0.0010  8.771e-01  1.000   0.9366   0.9470   0.5738   0.6356   0.5851  1.0e+01    0.4326
+     5    0.020   9.75e-01  4.3615e+00   0.0049  8.759e-01  1.000   0.9384   0.9487   0.5750   0.6371   0.5864  1.0e+01    0.4327
+    20    0.078   9.05e-01  4.2867e+00   0.0188  8.742e-01  1.000   0.9419   0.9519   0.5776   0.6405   0.5891  1.0e+01    0.4326
+    80    0.312   6.69e-01  4.0790e+00   0.0650  8.923e-01  0.995   0.9265   0.9353   0.5689   0.6327   0.5809  1.0e+01    0.4305
+   320    1.250   1.99e-01  3.8534e+00   0.1557  9.947e-01  0.979   0.8301   0.8369   0.5095   0.5693   0.5227  1.0e+00    0.4491
+  1280    5.000   5.56e-03  3.8300e+00   0.1938  1.048e+00  0.970   0.7812   0.7876   0.4782   0.5349   0.4922  1.0e+00    0.4427
+  4096   16.000   3.93e-03  3.8300e+00   0.1945  1.049e+00  0.969   0.7801   0.7865   0.4773   0.5339   0.4913  1.0e+00    0.4424
+       per-layer at t_last: L0[share 0.25 cosEQ 0.961 cosNG 0.913]  L1[share 0.97 cosEQ 0.774 cosNG 0.453]
+       cos(Delta(t_last), d_NG[lam]) by lam:  1e-03:0.074  1e-02:0.122  1e-01:0.305  1e+00:0.491  1e+01:0.489  1e+02:0.479
+
+-- target family: natural (no 1/sigma^2)
+   target fidelity (u_eff vs dL/dout): mu-half 1.0000, log_std-half 0.7902 (log_std target-clip truncation)
+   cos(d_BP, d_OUT)=0.9034   ceilings: cos(d_EQ, d_NG)=0.7967 (lam*=1e+00), cos(d_BP, d_NG)=0.7962 (lam*=1e+00)
+    t1     t1/N      resid      energy  z-shift    |Delta|    shL   cos_BP   cos_EQ  cos_SGD  cos_OUT  cos_NG*     lam*  cosF_NG*
+     0    0.000   1.00e+00  3.5776e+00   0.0000  6.622e-01  1.000   0.8952   0.9044   0.7008   0.8016   0.7135  1.0e+01    0.6856
+       anchor t1=0: share_last=1.000000 (expect 1.0), cos(last-layer block vs d_BP)=1.000000 (expect 1.0)
+     1    0.004   9.95e-01  3.5720e+00   0.0010  6.618e-01  1.000   0.8960   0.9052   0.7014   0.8023   0.7141  1.0e+01    0.6856
+     5    0.020   9.75e-01  3.5501e+00   0.0049  6.603e-01  1.000   0.8990   0.9081   0.7036   0.8050   0.7164  1.0e+01    0.6857
+    20    0.078   9.05e-01  3.4752e+00   0.0188  6.582e-01  0.999   0.9051   0.9139   0.7078   0.8105   0.7210  1.0e+01    0.6853
+    80    0.312   6.69e-01  3.2675e+00   0.0650  6.827e-01  0.992   0.8803   0.8877   0.6869   0.7885   0.7004  1.0e+01    0.6781
+   320    1.250   1.99e-01  3.0420e+00   0.1557  8.134e-01  0.968   0.7421   0.7472   0.5765   0.6646   0.5927  1.0e+00    0.6819
+  1280    5.000   5.56e-03  3.0186e+00   0.1938  8.797e-01  0.956   0.6801   0.6848   0.5274   0.6087   0.5440  1.0e+00    0.6648
+  4096   16.000   3.93e-03  3.0185e+00   0.1945  8.805e-01  0.956   0.6786   0.6834   0.5262   0.6073   0.5428  1.0e+00    0.6644
+       per-layer at t_last: L0[share 0.29 cosEQ 0.961 cosNG 0.913]  L1[share 0.96 cosEQ 0.651 cosNG 0.498]
+       cos(Delta(t_last), d_NG[lam]) by lam:  1e-03:0.084  1e-02:0.136  1e-01:0.338  1e+00:0.543  1e+01:0.538  1e+02:0.528
+
+reading:
+  anchor   : at t1=0 the update must be final-layer-only (share_last = 1.0)
+             with the final-layer block exactly on d_BP's — validates the
+             harness against jpc's own energy.
+  fidelity : cos(d_BP, d_SGD/d_OUT) < 1 measures how much the log_std target
+             clip distorts what the target family means to encode — a property
+             of the production target, not of the probe.
+  timescale: t1/N is per-sample inference time; the energy is batch-normalised
+             so settling needs t1/N ~ 10-40. The bench operating point is
+             t1/N = 20/2048 = 0.01, and jpc hard-stops at t1=4096,
+             so a bench minibatch (N=2048) CANNOT be equilibrated in-training.
+  claim    : "PC update = natural gradient" requires (a) rows moving onto d_EQ
+             as resid -> 0 (equilibrium theory holds), AND (b) the d_EQ~d_NG
+             ceiling being high — for the natural family. If rows never leave
+             the t1=0 anchor, inference contributes nothing and any 'natural
+             gradient' is exactly the target preconditioning, nothing more.

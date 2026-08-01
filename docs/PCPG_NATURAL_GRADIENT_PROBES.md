@@ -163,6 +163,57 @@ builds **one** hidden layer (obs→64→out), not the "[64,64]" the bench config
 comment claims (`configs/mujoco_halfcheetah_pc_actor_critic_bench.yaml:1`).
 Worth fixing the comment and re-checking baseline-comparability claims.
 
+### Added regime: `fixed` — the state-independent-σ control (seed 0, n=256)
+
+`--regimes fixed` zeroes the `log_std` rows of the final weight so `σ = exp(bias)`
+is constant across states, with `bias = 0` → **σ ≡ 1**, mid-window so the clamp
+cannot bind on the raw output. This is PPO's parameterisation and the one
+experiment-log §3.4 switches on via `state_indep_std`. It is the reference point
+the three heteroscedastic regimes are read against. Full log:
+`results/ng_probe_rerun/probe_natural_gradient_4regimes.txt`.
+
+**F6 — with σ state-independent there is almost no natural-gradient geometry to
+get right.** The separation between the references collapses:
+
+| regime | σ range | `cos(d_SGD, d_NG)` | `cos(d_OUT, d_NG)` |
+|---|---|---|---|
+| **fixed** | 1.000 – 1.000 | **0.941** | 0.933 |
+| init | 0.419 – 1.649 | 0.925 | 0.850 |
+| mixed | 0.135 – 1.162 | 0.622 | 0.723 |
+| floor | 0.135 – 0.297 | **0.341** | 0.500 |
+
+With σ constant, `F_out = diag(1, 2)` is nearly isotropic, so the natural gradient
+and the vanilla gradient point almost the same way — the claim "PC ≈ NG" is nearly
+unfalsifiable there because *every* direction is ≈ NG. The heteroscedastic spread is
+what *creates* the gap that the claim is about, and it is widest at the floor. So
+`fixed` is the right **control** and the wrong **test case**: quote it to calibrate
+how much geometry is at stake, never as evidence that the update is natural.
+
+Note F2/F3 are regime-independent: `fixed` still shows `shL ≥ 0.97` (final-layer
+delta rule) and `cos_NG*` *falling* with `t₁` (0.589 → 0.491), so inference
+contributes no network factor here either.
+
+**F7 — the `log_std` clamp binds through the *target*, not through where σ sits.
+The mechanism in F5 is misattributed, and the clamp is essentially never inactive
+at the bench operating point.** In `fixed`, σ ≡ 1 and *0.0%* of raw `log_std`
+outputs are out of bounds — yet target fidelity on the `log_std` half is still
+**0.6995** (Euclidean) / **0.7902** (natural), not 1.0. The clip in
+`gaussian_pc_targets` applies to `log_scale + log_scale_offset`, so a target leaves
+the window whenever the *offset* is large relative to the window width (2.5), no
+matter how central σ is. Measured at σ ≡ 1, `log_std` targets clipped:
+
+| `target_scale` | clipped | median \|offset\| |
+|---|---|---|
+| 1.0 (probe default) | 27.3% | 0.43 |
+| **10.0 (bench `ts10`)** | **80.9%** | 4.27 |
+
+Every bench config is `ts10` (`..._adam_tanh_ts10_bench_mt20_...`), so in production
+roughly **four out of five `log_std` targets are truncated** — with a mid-window,
+state-independent σ, i.e. in the configuration that was supposed to be the clean
+one. F5's floor-regime fidelity (0.37–0.39) is then two effects compounding, not
+one: σ pinned at the boundary *and* oversized offsets. Any claim about what the
+`log_std` channel encodes has to be conditioned on `target_scale`, not just on σ.
+
 ### Probe-1 caveats (why Probe 2 exists)
 
 Weights are at initialisation (with σ-head bias shifts); trained checkpoints

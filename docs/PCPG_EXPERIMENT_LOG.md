@@ -280,6 +280,32 @@ dramatically worse with a state-independent σ. This is the
 strongest evidence that PCPG's instability is *not* a shared "MuJoCo/tanh" issue: the
 same parameterisation is fine for PPO in this codebase.
 
+> **⚠ CONFOUND — do not read this cell as evidence about σ parameterisation.**
+> Two things were uncontrolled in the Adam cells, either of which explains the
+> negative returns on its own:
+>
+> 1. **No trust region was enforced anywhere.** Despite the `trust_region_kl_*`
+>    family name, `policy_kl` is computed *only* as a diagnostic
+>    (`pc_actor_critic.py:477,495-496`); there is no KL rejection, backtracking, or
+>    step rescaling in `src/pc_algorithms/` (`grep target_kl|kl_limit|reject|
+>    backtrack|line_search` → no matches). These configs set neither `target_clip`
+>    nor `max_grad_norm`, and the flags table notes Adam renormalises
+>    `max_grad_norm` away regardless — so **nothing bounded the step**. A realised
+>    `kl_max` of 170 is not a loose trust region, it is the absence of one (TRPO's
+>    `target_kl` is 0.01, i.e. 4 orders of magnitude smaller). The SGD cells, whose
+>    `kl_max` was 0.6–1.0, are the only bounded ones and they "never learned"
+>    (best ≤ 73) — so no cell in this table had *both* a bounded step and learning.
+> 2. **The `log_std` channel was ~81% truncated.** These are `ts10` configs, and at
+>    `target_scale = 10` with a state-independent σ ≡ 1, 80.9% of `log_std` targets
+>    fall outside the `[LOG_STD_MIN, LOG_STD_MAX]` window and get clipped (probe
+>    finding F7, `PCPG_NATURAL_GRADIENT_PROBES.md`). The `state_indep_std` arm
+>    therefore did not cleanly test the parameterisation it names.
+>
+> What the cell *does* support: with this implementation, PPO's σ parameterisation
+> does not by itself rescue PCPG. It does **not** support "PCPG performs
+> dramatically worse with a state-independent σ" — that comparison needs a bounded
+> step (an enforced KL cap or a `target_clip`) at matched `target_scale` first.
+
 ![global sigma](../results/trust_region_kl_stdglobal/learning_curve.png)
 *§3.4 state-independent σ: Adam runs go strongly negative.*
 

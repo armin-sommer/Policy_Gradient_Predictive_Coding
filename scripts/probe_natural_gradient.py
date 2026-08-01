@@ -151,6 +151,24 @@ def set_log_std_bias(model, key, regime, action_dim):
     """Position the sigma head: the regime is the independent variable."""
     if regime == "init":
         return model
+    if regime == "fixed":
+        # CONTROL: state-INDEPENDENT sigma, i.e. PPO's parameterisation and the
+        # one the experiment log 3.4 (`state_indep_std`) switches on. Zeroing the
+        # log_std rows of the final weight makes sigma = exp(bias) constant across
+        # states, so the output precision F_out = diag(1/sigma^2, 2) is no longer a
+        # function of the inference variable. bias = 0 -> sigma = 1, comfortably
+        # inside [LOG_STD_MIN, LOG_STD_MAX], so the clamp is inactive and the F5
+        # fidelity loss is switched off too. This is the clean case (no
+        # parameter-dependent precision, no clamp truncation) against which the
+        # heteroscedastic regimes' cost is read.
+        lin_w = model[-1].layers[1].weight
+        model = eqx.tree_at(
+            lambda m: m[-1].layers[1].weight, model,
+            lin_w.at[action_dim:, :].set(0.0))
+        bias0 = model[-1].layers[1].bias
+        return eqx.tree_at(
+            lambda m: m[-1].layers[1].bias, model,
+            bias0.at[action_dim:].set(0.0))
     if regime == "mixed":
         delta = jr.uniform(key, (action_dim,), minval=-1.8, maxval=0.3)
     elif regime == "floor":
@@ -478,8 +496,9 @@ def main():
                     help="inference integration times; 20 = bench operating "
                          "point; jpc hard-stops at 4096")
     ap.add_argument("--regimes", nargs="+",
-                    default=["init", "mixed", "floor"],
-                    choices=["init", "mixed", "floor"])
+                    default=["init", "mixed", "floor", "fixed"],
+                    choices=["init", "mixed", "floor", "fixed"],
+                    help="'fixed' is the state-independent-sigma control.")
     ap.add_argument("--dampings", type=float, nargs="+",
                     default=[1e-3, 1e-2, 1e-1, 1e0, 1e1, 1e2])
     ap.add_argument("--cg-iters", type=int, default=400)
