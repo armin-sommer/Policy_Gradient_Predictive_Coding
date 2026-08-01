@@ -39,6 +39,9 @@ def main():
                     help="raise the log_std floor (e.g. -1 -> sigma_min 0.37)")
     ap.add_argument("--natural-target", action="store_true",
                     help="natural-gradient target (drop the 1/sigma^2 amplifier)")
+    ap.add_argument("--inference-rate-correction", action="store_true",
+                    help="settle inference at per-sample rate, so a bench "
+                         "minibatch actually equilibrates (see inference.py)")
     a = ap.parse_args()
 
     base = ROOT / "configs" / f"mujoco_halfcheetah_{a.algo}_{a.tier}.yaml"
@@ -60,6 +63,8 @@ def main():
         c["agent"]["log_std_min"] = a.log_std_min
     if a.natural_target:
         c["train"]["natural_target"] = True
+    if a.inference_rate_correction:
+        c["train"]["inference_rate_correction"] = True
 
     ts = "ts" + str(a.ts).replace(".", "").ljust(2, "0")[:2]        # 0.5 -> ts05
     lr = "" if abs(a.lr - 3e-4) < 1e-12 else "_lr" + f"{a.lr:g}".replace(".", "")
@@ -70,7 +75,8 @@ def main():
                                               + f"{a.target_clip:g}".replace(".", ""))
     smin = "" if a.log_std_min is None else "_smin" + f"{a.log_std_min:g}".replace(".", "").replace("-", "m")
     nat = "_nat" if a.natural_target else ""
-    name = f"halfcheetah_{a.algo}_{a.opt}_{a.act}_{ts}_{a.tier}{lr}{mt}{sistd}{clip}{tclip}{smin}{nat}"
+    irc = "_settled" if a.inference_rate_correction else ""
+    name = f"halfcheetah_{a.algo}_{a.opt}_{a.act}_{ts}_{a.tier}{lr}{mt}{sistd}{clip}{tclip}{smin}{nat}{irc}"
     c["agent"]["experiment_name"] = name.replace("halfcheetah_", "")
 
     out = ROOT / "configs" / "benchmark" / f"{name}.yaml"

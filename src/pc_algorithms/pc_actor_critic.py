@@ -17,6 +17,7 @@ from env import make_vec_env
 from utils.utils import EnvConfig
 from pc_algorithms import gaussian_policy as gpol
 from pc_algorithms.likelihood_energy import make_likelihood_pc_step
+from pc_algorithms.inference import make_pc_step_at_rate, inference_residual
 from pc_algorithms.gaussian_policy import (
     LOG_STD_MAX,
     discrete_pc_targets,
@@ -66,6 +67,13 @@ class Config:
     num_minibatches = 1
     normalize_advantages = False
     max_t1 = 20
+    # Run the inference ODE at per-sample rate instead of jpc's batch-normalised
+    # rate. jpc's energy carries a 1/N factor, which is a pure rescaling of the
+    # inference clock (same fixed point) but makes settling need t1/N ~ 10-40 --
+    # unreachable at bench N, since jpc hard-stops at t=4096. With this on,
+    # max_t1=20 settles at any batch size. See pc_algorithms/inference.py and
+    # scripts/probe_inference_settling.py. Off = the committed runs' behaviour.
+    inference_rate_correction = False
     normalize_rewards = False
     exp_std = True
     # State-independent std: match the SOTA PPO/TRPO policy (a single global
@@ -352,7 +360,10 @@ def main(_):
 
                 # value regresses the fixed lambda-returns
                 for _ in range(Config.pc_steps_per_update):
-                    value_result = jpc.make_pc_step(
+                    _value_step = (make_pc_step_at_rate
+                                   if Config.inference_rate_correction
+                                   else jpc.make_pc_step)
+                    value_result = _value_step(
                         model=value_model,
                         optim=value_optim,
                         opt_state=value_opt_state,
@@ -412,6 +423,16 @@ def main(_):
                             exp_std=Config.exp_std,
                             adv_mode=Config.likelihood_adv_mode,
                             tau=Config.likelihood_tau,
+                        )
+                    elif Config.inference_rate_correction:
+                        policy_result = make_pc_step_at_rate(
+                            model=policy_model,
+                            optim=policy_optim,
+                            opt_state=policy_opt_state,
+                            output=policy_targets,
+                            input=mb_obs,
+                            max_t1=Config.max_t1,
+                            grad_norms=True,
                         )
                     else:
                         policy_result = jpc.make_pc_step(

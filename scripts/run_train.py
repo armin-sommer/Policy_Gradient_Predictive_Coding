@@ -33,6 +33,7 @@ KEY_MAP = {
     ("train", "total_steps"): "total_timesteps",
     ("train", "target_scale"): "target_scale",
     ("train", "max_t1"): "max_t1",
+    ("train", "inference_rate_correction"): "inference_rate_correction",
     ("train", "pc_steps_per_update"): "pc_steps_per_update",
     ("train", "optimizer"): "optimizer",
     ("agent", "act_fn"): "act_fn",

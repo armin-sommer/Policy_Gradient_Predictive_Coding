@@ -23,6 +23,7 @@ from pc_algorithms.gaussian_policy import (
     sample_gaussian_action,
     split_gaussian_params,
 )
+from pc_algorithms.inference import make_pc_step_at_rate
 from pc_algorithms.pc_eval import evaluate_discrete_policy, evaluate_gaussian_policy
 from pc_algorithms.returns import compute_mc_returns
 
@@ -60,6 +61,10 @@ class Config:
     num_minibatches = 1
     normalize_advantages = False
     max_t1 = 20
+    # See pc_actor_critic.Config.inference_rate_correction and
+    # pc_algorithms/inference.py: jpc's batch-normalised energy makes the
+    # inference clock N times too slow, so a bench minibatch never settles.
+    inference_rate_correction = False
     normalize_rewards = False
     exp_std = True
     # State-independent std: match the SOTA PPO/TRPO policy (a single global
@@ -334,7 +339,10 @@ def main(_):
                         params_mb, jnp.asarray(actions_flat[mb_idx]).astype(jnp.int32),
                         mb_adv, action_size, Config.target_scale)
                 for _ in range(Config.pc_steps_per_update):
-                    result = jpc.make_pc_step(
+                    _pc_step = (make_pc_step_at_rate
+                                if Config.inference_rate_correction
+                                else jpc.make_pc_step)
+                    result = _pc_step(
                         model=model,
                         optim=optim,
                         opt_state=opt_state,
