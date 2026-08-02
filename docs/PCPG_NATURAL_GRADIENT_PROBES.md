@@ -214,6 +214,54 @@ one. F5's floor-regime fidelity (0.37–0.39) is then two effects compounding, n
 one: σ pinned at the boundary *and* oversized offsets. Any claim about what the
 `log_std` channel encodes has to be conditioned on `target_scale`, not just on σ.
 
+### ⚠ Scope limit of the `d_EQ` reference — it cannot test the saddle-escape claim
+
+Innocenti et al. (2305.18188, *Understanding Predictive Coding as an Adaptive
+Trust-Region Method*) state the headline prediction as **PC escapes saddle points
+faster than BP**, with the dynamics *interpolating* between BP's loss-gradient
+direction and a TR direction, proved in a shallow linear model. Two consequences for
+how we read `d_EQ`:
+
+1. **BP is one endpoint of the predicted interpolation**, so `cos(Δ, d_BP) ≈ 1` is
+   the theory's own degenerate case, not a refutation of it.
+2. **`d_EQ` goes inert exactly at a saddle.** `S = I + Σ_l B_l B_lᵀ` with
+   `B_l = ∂out/∂z_l` is built from products of weight matrices, so it vanishes as
+   weights approach the origin saddle of a linear net. Measured (linear net, depth 5,
+   all weight matrices scaled by ε):
+
+   | ε | cond(S) | `cos(d_BP, d_EQ)` |
+   |---|---|---|
+   | 1.00 | 1.62 | 0.99097 |
+   | 0.30 | 1.04 | 0.99995 |
+   | 0.10 | 1.00 | 1.00000 |
+   | 0.01 | 1.00 | 1.00000 |
+
+   So the rescaling is *most* inert in the regime where the paper predicts the
+   *largest* effect.
+
+`d_EQ` therefore encodes a **local direction-rescaling** reading — BP on an
+`S⁻¹`-rescaled loss at a fixed `(θ, batch)`. Saddle escape is a **landscape and
+dynamics** claim: that inference moves the critical points, so PC's energy has no
+saddle where BP's loss does. A linear reparameterisation of the gradient at one
+point cannot express that. **F3/F4 should therefore be read as "inference supplies no
+natural-gradient/output-metric content", which is what they measure, and NOT as
+evidence against the trust-region result.** Testing that needs a saddle-escape
+experiment (initialise at/near a saddle, compare escape time under PC vs BP with
+plain GD), which is not implemented.
+
+Two further conditions we do not currently satisfy, worth stating before any claim
+about the theorem: the property is cited in `PCPG_TUNING_METHODOLOGY.md:137` as
+holding for **plain gradient descent**, whereas every headline bench cell is
+**Adam** — and since the measured effect of `S` is on step *magnitude* rather than
+direction, Adam's per-coordinate renormalisation removes it. And equilibrium is
+required, which production did not reach until `inference_rate_correction`
+(see `PCPG_GEOMETRY_FINDINGS.md` §4d).
+
+*Sourcing note: the paper's full text was not retrievable from this environment
+(arxiv/openreview/semanticscholar all blocked at the egress proxy). The above uses
+the title and abstract plus the repo's own citations; the exact theorem conditions
+have not been checked against the text.*
+
 ### Probe-1 caveats (why Probe 2 exists)
 
 Weights are at initialisation (with σ-head bias shifts); trained checkpoints
