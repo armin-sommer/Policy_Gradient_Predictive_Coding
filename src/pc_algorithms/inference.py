@@ -76,6 +76,8 @@ def settle_activities(model, obs, output, *, max_t1=20, rate_correction=True,
     return [a[0] for a in sol.ys], acts0
 
 
+@eqx.filter_jit          # jpc.make_pc_step is filter_jit'd too; without this the
+                         # whole diffeqsolve re-traces on every call (~80x slower).
 def make_pc_step_at_rate(model, optim, opt_state, output, input, *,
                          max_t1=20, rate_correction=True, grad_norms=False,
                          dt=None, rtol=1e-3, atol=1e-3, max_steps=1_000_000):

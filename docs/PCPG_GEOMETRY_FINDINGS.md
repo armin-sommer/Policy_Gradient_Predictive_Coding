@@ -191,17 +191,37 @@ vector field by N, while the weight step keeps jpc's batch-normalised
 So the existing `max_t1 = 20` default is already sufficient once the rate is right.
 End-to-end smoke test passes through YAML on the bandit (`TRAINING END`).
 
-**The price: ~80× compute per update** — 0.22 s → 18 s on the bandit smoke test
-(CPU, minibatch 256). This is *inherent, not overhead*: reaching equilibrium takes a
-fixed amount of per-sample time, so the solver must do that work. The honest
-reframing of F1 is therefore not "jpc was slow" but **"production was silently doing
-~1% of the inference work, and doing all of it is expensive."**
+### How much inference we ran vs how much is needed
 
-**The cheap route we should take instead:** we do not need the ODE *trajectory*, only
-its **fixed point** — `∂F/∂z = 0`. That is a root-find, and with `Π_L` frozen at the
-feedforward σ it is a *linear solve*. Replacing time-integration with a direct
-fixed-point solve should recover settled activities at a small fraction of 80×. This
-is the recommended follow-up, not a speculative optimisation.
+`τ = t₁/N` is per-sample inference time. The residual is a function of `τ` **alone**
+(N=64 and N=256 agree to 3 decimals), so one curve covers every batch size:
+
+| τ | residual / initial | |
+|---|---|---|
+| **0.00977** | **0.988** | ← what production ran (`max_t1=20`, N=2048) |
+| 0.03 | 0.962 | |
+| 0.1 | 0.873 | |
+| 0.3 | 0.645 | |
+| 1.0 | 0.218 | |
+| 3.0 | 0.026 | 90% settled |
+| **10.0** | **0.002** | ← converged; τ=30 and τ=100 do not improve on it |
+
+So production removed **1.2% of the residual** and needed **τ ≈ 10** — about a
+**1000× shortfall** in inference time (`t₁ = 20` run, `t₁ ≈ 20,480` required at
+N=2048 *without* the rate correction).
+
+With the correction, `max_t1` *is* τ, so the existing `max_t1 = 20` already
+over-settles (τ=20 vs the τ=10 needed). Measured at the real bench N=2048:
+residual 0.988 → **0.0037**. `max_t1 = 10` would also suffice.
+
+**Cost: negligible.** 0.199 s/update corrected vs 0.221–0.254 s uncorrected on the
+bandit — i.e. no measurable penalty, because once the activities reach equilibrium
+the adaptive controller grows its step and covers the rest of the interval in a few
+steps. (An earlier draft of this note claimed ~80×; that was a missing
+`@eqx.filter_jit` on `make_pc_step_at_rate` re-tracing the solve on every call —
+`jpc.make_pc_step` is itself `filter_jit`'d. Fixed. Settling is effectively free, so
+the fixed-point/linear-solve alternative is an optional optimisation rather than a
+prerequisite.)
 
 ---
 
@@ -249,12 +269,14 @@ A clean test needs a bounded step at matched `target_scale`.
 
 ## 7. Recommended next steps, in priority order
 
-1. **Replace inference-by-integration with a fixed-point solve** (§4d). Settling now
-   works but costs ~80×; the equilibrium is a root-find, and a linear solve when
-   `Π_L` is frozen at the feedforward σ. This makes settled PC affordable enough to
-   run the real ablation: does `inference_rate_correction=true` change learning at
-   all? Given §4b (`cos(d_BP, d_EQ) ≈ 0.99`) the prediction is that it does **not**,
-   which is itself the cleanest test of the trust-region story.
+1. **Run the settled-vs-unsettled ablation** — it is now cheap (§4d: no measurable
+   cost) and it is the single highest-value experiment available. Does
+   `inference_rate_correction=true` change learning at all? Given §4b
+   (`cos(d_BP, d_EQ) ≈ 0.99`) the prediction is that it does **not**. Either outcome
+   is informative: no change confirms that PC-at-equilibrium is backprop in this
+   architecture; a change means `d_EQ` is missing something and §4b needs revisiting.
+   Every prior PCPG result was produced at ~1% settled, so this also tells us whether
+   any of them need re-running.
 2. **Enforce a trust region** (KL cap or `target_clip`). Independent blocker: no σ or
    geometry conclusion has a valid arm until it exists (§5).
 3. **Decouple `target_scale` from the clamp** so the `log_std` channel encodes what
