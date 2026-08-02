@@ -1,0 +1,42 @@
+init=favor_suboptimal (pi0(opt)=0.018)  steps=60000  seeds=[1, 2, 3, 4, 5]
+  skip pc_reinforce_seed1_unsettled (complete)
+  skip pc_reinforce_seed1_settled (complete)
+  skip pc_reinforce_seed2_unsettled (complete)
+  skip pc_reinforce_seed2_settled (complete)
+  skip pc_reinforce_seed3_unsettled (complete)
+  skip pc_reinforce_seed3_settled (complete)
+  skip pc_reinforce_seed4_unsettled (complete)
+  skip pc_reinforce_seed4_settled (complete)
+  skip pc_reinforce_seed5_unsettled (complete)
+  skip pc_reinforce_seed5_settled (complete)
+  skip pc_actor_critic_seed1_unsettled (complete)
+  skip pc_actor_critic_seed1_settled (complete)
+  skip pc_actor_critic_seed2_unsettled (complete)
+  skip pc_actor_critic_seed2_settled (complete)
+  skip pc_actor_critic_seed3_unsettled (complete)
+  skip pc_actor_critic_seed3_settled (complete)
+  skip pc_actor_critic_seed4_unsettled (complete)
+  skip pc_actor_critic_seed4_settled (complete)
+  skip pc_actor_critic_seed5_unsettled (complete)
+  skip pc_actor_critic_seed5_settled (complete)
+
+==========================================================================
+final pi(opt), mean +/- SEM over seeds   (success = final pi >= 0.9)
+==========================================================================
+             algo        arm   n    final pi(opt)   success
+     pc_reinforce  unsettled   5     0.989 +/- 0.003      5/5
+     pc_reinforce    settled   5     0.987 +/- 0.003      5/5
+  pc_actor_critic  unsettled   5     0.992 +/- 0.003      5/5
+  pc_actor_critic    settled   5     0.977 +/- 0.008      5/5
+
+delta (settled - unsettled), paired by seed — final pi(opt):
+       pc_reinforce  -0.0020 +/- 0.0020 (n=5)  t(4)=-1.00 vs 2.776  95% CI [-0.0076, +0.0036]  no detectable effect
+    pc_actor_critic  -0.0150 +/- 0.0065 (n=5)  t(4)=-2.30 vs 2.776  95% CI [-0.0331, +0.0031]  no detectable effect
+
+(59 evals over 60000 steps -> 1017 steps/eval)
+
+delta (settled - unsettled), paired by seed — steps to pi(opt) >= 0.9:
+       pc_reinforce  +3661 +/- 407 (n=5)  t(4)=+9.00 vs 2.776  95% CI [+2532, +4790]  SIGNIFICANT — settling changes learning
+    pc_actor_critic  +5085 +/- 1702 (n=5)  t(4)=+2.99 vs 2.776  95% CI [+361, +9809]  SIGNIFICANT — settling changes learning
+
+wrote /home/user/Policy_Gradient_Predictive_Coding/results/settled_ablation/results.json

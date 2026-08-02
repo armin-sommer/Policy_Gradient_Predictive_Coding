@@ -225,6 +225,52 @@ prerequisite.)
 
 ---
 
+## 4e. The settled-vs-unsettled ablation — settling DOES change learning
+
+Run (`scripts/run_settled_ablation.py`, `results/settled_ablation/`): bandit,
+favor_suboptimal (π₀=0.018), 60k steps, seeds 1–5, both PC algorithms, matched
+seeds, 20/20 runs completed. Arms are `train.inference_rate_correction` off/on,
+i.e. residual **0.90 → 0.003** at the bandit's N=256.
+
+**Final π(opt) shows nothing — but it has no power.** Both arms hit 5/5 success at
+π ≈ 0.98; the task is saturated at 60k steps.
+
+| algo | unsettled | settled | paired Δ | verdict |
+|---|---|---|---|---|
+| pc_reinforce | 0.989 ± 0.003 | 0.987 ± 0.003 | −0.002 ± 0.002 | n.s. (t(4)=−1.00) |
+| pc_actor_critic | 0.992 ± 0.003 | 0.977 ± 0.008 | −0.015 ± 0.007 | n.s. (t(4)=−2.30) |
+
+**Steps-to-π≥0.9 uses the whole curve, and it is unambiguous — settling is slower:**
+
+| algo | paired Δ steps | t(4) | 95% CI |
+|---|---|---|---|
+| pc_reinforce | **+3661 ± 407** | +9.00 | [+2532, +4790] |
+| pc_actor_critic | **+5085 ± 1702** | +2.99 | [+361, +9809] |
+
+All 5 pc_reinforce seeds slower; 4/5 pc_actor_critic slower, 1 tie. So **the §4b
+prediction ("settling changes nothing") is falsified on this task** — but not for the
+reason it would seem.
+
+**Why, and why §4b is not overturned.** Measuring the update directly in the
+*bandit's* geometry (discrete softmax head, 1→32→2), settled vs unsettled over 5
+seeds: `cos = 0.67–0.89` (mean ≈ 0.78) and `‖Δ‖` ratio 1.05–1.65 (mean ≈ 1.31). So
+inference here **rotates the update substantially** — unlike the Gaussian
+MuJoCo-like geometry of §4b (17→64→12), where `cos(d_BP, d_EQ) ≈ 0.99`. And the
+slowdown is not a step-size artifact: settled steps are *larger* yet converge later,
+so a changed direction, not a changed magnitude, is doing the work.
+
+**The real lesson: §4b's "inference is inert" result is geometry-specific and does
+not transfer.** It was measured on one architecture; the bandit's is different and
+behaves differently. The MuJoCo/Gaussian claim therefore still needs its own
+settled-vs-unsettled training run — which is GPU-blocked here, and is now the
+highest-priority outstanding experiment.
+
+**Also actionable:** every committed bandit result was produced at ~10% settled, and
+every MuJoCo result at ~1.2%. Settling measurably changes the bandit ones (speed, not
+final performance). Whether it changes the MuJoCo conclusions is unknown.
+
+---
+
 ## 5. Methodological: experiment-log §3.4 cannot support its stated conclusion
 
 §3.4 (`trust_region_kl_stdglobal`) concludes that PCPG "performs dramatically worse
