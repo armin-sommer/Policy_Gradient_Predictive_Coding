@@ -1,14 +1,20 @@
 # Does the PCPG update have natural-gradient geometry? — measurement summary
 
-**Status:** internal, for circulation. **Branch:** `fixing-pcpg` @ `4768b68`.
-**Answer:** no, and the reason decomposes into three independent gaps, only one of
-which is about predictive coding at all.
+**Status:** internal, for circulation. **Branch:** `fixing-pcpg` @ `610c909`.
 
-Scope note up front: everything here is **Probe 1** — synthetic batch, weights at
+**Answer:** no — the reason decomposes into three independent gaps (§4c), only one
+of which is about predictive coding at all. Since first draft: **Gap 1 is fixed**
+(inference now genuinely settles, at no measurable cost — §4d), and the ablation it
+unblocked shows that **settling significantly slows learning** on the bandit (§4e).
+That falsifies §4b's prediction *on that task* and shows §4b's "inference is inert"
+result is **geometry-specific and does not transfer** — the MuJoCo/Gaussian case is
+still untested and is the top outstanding experiment.
+
+Scope note up front: §§1–4c are **Probe 1** — synthetic batch, weights at
 initialisation (with σ-head bias shifts to place the regime), single seed, `n=256`,
-CPU. It answers *"what does this machinery compute"*, not *"what happens along a
-real trajectory"*. Probe 2 (real checkpoints) is specified but unbuilt, and is the
-main route by which these conclusions could soften. See **Limitations**.
+CPU. That part answers *"what does this machinery compute"*, not *"what happens along
+a real trajectory"*. §4e is the one real-training result here, and it is bandit-only.
+Probe 2 (real checkpoints) is specified but unbuilt. See **Limitations**.
 
 Environment: `jax 0.4.38`, `jpc 1.0.0`, `equinox 0.13.8`, `diffrax 0.7.2`.
 Geometry: `jpc.make_mlp` 17 → 64 → 12, tanh, `ts=1.0`, seed 0.
