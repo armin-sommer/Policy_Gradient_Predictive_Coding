@@ -13,6 +13,13 @@ train:
   learning_rate: 3.0e-4
   target_scale: 1.0
   max_t1: 20
+  # max_t1 is an ODE END TIME, and jpc's energy carries a 1/N factor, so the
+  # per-sample inference time is t1/N -- 20/2048 ~ 0.01 at this batch size,
+  # i.e. ~1% settled. This cancels the 1/N so max_t1 IS the per-sample time;
+  # 20 then settles to 99.5%. Raising max_t1 instead cannot work (jpc hard-
+  # stops at t=4096, and convergence would need ~20,480). See
+  # src/pc_algorithms/inference.py and docs/PCPG_GEOMETRY_FINDINGS.md 4d.
+  inference_rate_correction: true
   pc_steps_per_update: 1
   update_epochs: 2
   num_minibatches: 4
