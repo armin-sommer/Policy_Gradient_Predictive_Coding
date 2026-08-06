@@ -220,14 +220,36 @@ With the correction, `max_t1` *is* τ, so the existing `max_t1 = 20` already
 over-settles (τ=20 vs the τ=10 needed). Measured at the real bench N=2048:
 residual 0.988 → **0.0037**. `max_t1 = 10` would also suffice.
 
-**Cost: negligible.** 0.199 s/update corrected vs 0.221–0.254 s uncorrected on the
-bandit — i.e. no measurable penalty, because once the activities reach equilibrium
-the adaptive controller grows its step and covers the rest of the interval in a few
-steps. (An earlier draft of this note claimed ~80×; that was a missing
-`@eqx.filter_jit` on `make_pc_step_at_rate` re-tracing the solve on every call —
-`jpc.make_pc_step` is itself `filter_jit`'d. Fixed. Settling is effectively free, so
-the fixed-point/linear-solve alternative is an optional optimisation rather than a
-prerequisite.)
+**Cost: ~9.5× per PC step at bench scale.** Measured jitted at N=2048, mixed regime:
+0.045 s/update unsettled vs **0.428 s settled**. The hardware-independent driver is the
+adaptive solver's step count per inference solve, which carries over to GPU:
+
+| arm | τ | solver steps |
+|---|---|---|
+| jpc, `max_t1=20` (what all committed runs did) | 0.0098 | **5** |
+| corrected, `max_t1=20` | 20 | **62** |
+| corrected, `max_t1=10` | 10 | **39** |
+
+`max_t1=10` already converges (table above) and costs ~1.6× less than 20, so prefer it.
+
+> ⚠ **Two retractions, both from measuring in the wrong regime.** An earlier draft
+> claimed ~80×; that was a missing `@eqx.filter_jit` on `make_pc_step_at_rate`
+> re-tracing the solve on every call (`jpc.make_pc_step` is itself `filter_jit`'d) —
+> genuinely a bug, genuinely fixed. But the *replacement* claim that settling is then
+> "effectively free" was also wrong, for two separate reasons: the bandit figure
+> (0.199 s vs 0.221 s) is real but comes from a tiny net where inference is not the
+> bottleneck, and the bench-scale figure behind it was a **non-jitted**
+> `settle_activities` call whose wall-clock was tracing-dominated, hiding a 5 → 62
+> step difference. The jitted numbers above supersede both.
+>
+> Corroborating evidence that should have been noticed earlier: the committed
+> `mt10/20/40/80` runs all took the *same* wall-clock (403/407/406/412 s). That is
+> itself a symptom of never settling — τ stayed in [0.005, 0.039], where the solver
+> coasts in ~5 steps regardless of `max_t1`.
+
+Because settling is *not* free, the fixed-point alternative (solve `∂F/∂z = 0`
+directly instead of integrating to it — a linear solve when `Π_L` is frozen at the
+feedforward σ) is worth building if the ablation shows settling matters.
 
 ---
 

@@ -336,9 +336,15 @@ def build():
       "mean and learning rates carry over unchanged. Verified two ways: the settled "
       "activities agree with jpc integrated to t1 = 40N at cos = 1.000000 (max relative "
       "difference ~6e−4), confirming the fixed point is untouched; and at the real "
-      "bench N = 2048 the residual goes 0.988 → 0.0037. Cost is not a factor — "
-      "0.199 s/update against 0.221–0.254 s before — because past equilibrium the "
-      "adaptive solver grows its step.", "body")
+      "bench N = 2048 the residual goes 0.988 → 0.0037.", "body")
+    P("<b>It costs ~9.5× per PC step</b> at bench scale (jitted, N = 2048: 0.045 s "
+      "against 0.428 s). The hardware-independent driver is the adaptive solver's step "
+      "count per solve — 5 unsettled, 62 settled at max_t1 = 20, 39 at max_t1 = 10 — so "
+      "prefer max_t1 = 10, which already converges. An earlier draft of this report "
+      "said the cost was negligible; that came from a tiny-net bandit measurement plus "
+      "a non-jitted bench-scale call whose time was tracing-dominated, and is "
+      "retracted. Tellingly, the committed mt10/20/40/80 runs all took the same "
+      "wall-clock (403/407/406/412 s), which is itself a symptom of never settling.", "body")
 
     # ---------------------------------------------------------------- exp 6
     P("7. The ablation this unblocked, and what it overturned", "h1")
