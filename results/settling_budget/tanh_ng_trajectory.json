@@ -1,0 +1,205 @@
+{
+  "config": {
+    "env": "halfcheetah",
+    "num_envs": 256,
+    "rollout": 32,
+    "num_minibatches": 4,
+    "width": 64,
+    "depth": 2,
+    "act_fn": "tanh",
+    "target_scale": 1.0,
+    "learning_rate": 0.0003,
+    "gamma": 0.99,
+    "gae_lambda": 0.95,
+    "measure_at": [
+      0,
+      20,
+      60
+    ],
+    "warmup_arm": "settled",
+    "warmup_max_t1": 20.0,
+    "tau": [
+      20.0
+    ],
+    "tau_ref": 100.0,
+    "diagnose_floor": false,
+    "floor_tau": 5.0,
+    "ng_probe": true,
+    "ng_tau": 20.0,
+    "ng_tau_ref": 100.0,
+    "seed": 1,
+    "out": "/workspace/results_pod/settling_budget/tanh_ng_trajectory.json"
+  },
+  "obs_dim": 17,
+  "action_dim": 6,
+  "measurements": [
+    {
+      "updates": 0,
+      "env_steps": 0,
+      "policy": {
+        "label": "policy",
+        "n": 2048,
+        "resid_ffwd": 0.048189178109169006,
+        "tau_ref": 100.0,
+        "ref_self_cos": 0.9999997019767761,
+        "rows": [
+          {
+            "tau": 20.0,
+            "resid_ratio": 0.005315846411755265,
+            "cos_z": 0.9999396204948425,
+            "cos_g": 1.000000238418579,
+            "gnorm_ratio": 0.999960720539093,
+            "solver_steps": 57,
+            "ms": 950.9017914533615
+          }
+        ]
+      },
+      "value": {
+        "label": "value",
+        "n": 2048,
+        "resid_ffwd": 0.03329399973154068,
+        "tau_ref": 100.0,
+        "ref_self_cos": 1.000000238418579,
+        "rows": [
+          {
+            "tau": 20.0,
+            "resid_ratio": 0.004913093587373801,
+            "cos_z": 0.999977171421051,
+            "cos_g": 0.9999998211860657,
+            "gnorm_ratio": 0.9995280504226685,
+            "solver_steps": 35,
+            "ms": 1060.6809854507446
+          }
+        ]
+      },
+      "natural_gradient": [
+        {
+          "family": "euclidean",
+          "update_ref_cos": 1.000000238418579,
+          "cos_ng": 0.1761019378900528,
+          "cos_f_ng": 0.2649487555027008,
+          "damping": 10.0
+        },
+        {
+          "family": "natural_target",
+          "update_ref_cos": 0.9999929666519165,
+          "cos_ng": 0.1908649206161499,
+          "cos_f_ng": 0.3041803538799286,
+          "damping": 1.0
+        }
+      ]
+    },
+    {
+      "updates": 20,
+      "env_steps": 163840,
+      "policy": {
+        "label": "policy",
+        "n": 2048,
+        "resid_ffwd": 0.078868567943573,
+        "tau_ref": 100.0,
+        "ref_self_cos": 1.0000007152557373,
+        "rows": [
+          {
+            "tau": 20.0,
+            "resid_ratio": 0.0037099644025682154,
+            "cos_z": 0.9999587535858154,
+            "cos_g": 0.9999991655349731,
+            "gnorm_ratio": 0.9999560713768005,
+            "solver_steps": 54,
+            "ms": 946.1002983152866
+          }
+        ]
+      },
+      "value": {
+        "label": "value",
+        "n": 2048,
+        "resid_ffwd": 0.003092831699177623,
+        "tau_ref": 100.0,
+        "ref_self_cos": 0.9999995827674866,
+        "rows": [
+          {
+            "tau": 20.0,
+            "resid_ratio": 0.03029693648436408,
+            "cos_z": 0.9999780058860779,
+            "cos_g": 0.9999839663505554,
+            "gnorm_ratio": 1.0011323690414429,
+            "solver_steps": 22,
+            "ms": 1172.2097620368004
+          }
+        ]
+      },
+      "natural_gradient": [
+        {
+          "family": "euclidean",
+          "update_ref_cos": 0.9999991655349731,
+          "cos_ng": 0.11819559335708618,
+          "cos_f_ng": 0.27586057782173157,
+          "damping": 10.0
+        },
+        {
+          "family": "natural_target",
+          "update_ref_cos": 0.9999991655349731,
+          "cos_ng": 0.23611055314540863,
+          "cos_f_ng": 0.5285501480102539,
+          "damping": 100.0
+        }
+      ]
+    },
+    {
+      "updates": 60,
+      "env_steps": 491520,
+      "policy": {
+        "label": "policy",
+        "n": 2048,
+        "resid_ffwd": 0.1155412569642067,
+        "tau_ref": 100.0,
+        "ref_self_cos": 1.0000005960464478,
+        "rows": [
+          {
+            "tau": 20.0,
+            "resid_ratio": 0.003816528859320395,
+            "cos_z": 0.9999866485595703,
+            "cos_g": 0.9999924302101135,
+            "gnorm_ratio": 1.0000240802764893,
+            "solver_steps": 74,
+            "ms": 974.9290123581886
+          }
+        ]
+      },
+      "value": {
+        "label": "value",
+        "n": 2048,
+        "resid_ffwd": 0.005974798928946257,
+        "tau_ref": 100.0,
+        "ref_self_cos": 0.9999995827674866,
+        "rows": [
+          {
+            "tau": 20.0,
+            "resid_ratio": 0.023082993064413918,
+            "cos_z": 0.9999788999557495,
+            "cos_g": 0.9999731779098511,
+            "gnorm_ratio": 1.000266432762146,
+            "solver_steps": 25,
+            "ms": 864.0537187457085
+          }
+        ]
+      },
+      "natural_gradient": [
+        {
+          "family": "euclidean",
+          "update_ref_cos": 0.9999924302101135,
+          "cos_ng": 0.3660053014755249,
+          "cos_f_ng": 0.8514435291290283,
+          "damping": 100.0
+        },
+        {
+          "family": "natural_target",
+          "update_ref_cos": 0.9999493360519409,
+          "cos_ng": 0.5989291667938232,
+          "cos_f_ng": 0.7950171828269958,
+          "damping": 100.0
+        }
+      ]
+    }
+  ]
+}

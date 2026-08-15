@@ -1,0 +1,47 @@
+# Joint error-neuron TR-PCPG with inferred layerwise constraint precisions.
+env:
+  env_name: "halfcheetah"
+  num_envs: 256
+  episode_length: 1000
+
+train:
+  total_steps: 1_000_000
+  rollout_length: 32
+  gamma: 0.99
+  gae_lambda: 0.95
+  value_learning_rate: 3.0e-4
+  max_t1: 20
+  inference_rate_correction: true
+  pc_steps_per_update: 1
+  update_epochs: 2
+  num_minibatches: 4
+  normalize_advantages: true
+  normalize_rewards: true
+  policy_geometry: "parameter_local_precision_tr"
+  parameter_pc_damping: 0.0
+  parameter_pc_max_radius: 0.01
+  parameter_pc_joint_steps: 64
+  parameter_pc_joint_parameter_rate: 0.01
+  parameter_pc_joint_activity_rate: 0.01
+  parameter_pc_joint_error_rate: 0.01
+  parameter_pc_joint_penalty: 1.0
+  parameter_pc_joint_precision_rate: 0.01
+  parameter_pc_joint_precision_min: 0.1
+  parameter_pc_joint_precision_max: 10.0
+  eval_every: 10
+  num_eval_episodes: 10
+
+agent:
+  algorithm: "pc_actor_critic"
+  experiment_name: "pc_actor_critic_parameter_local_precision_tr"
+  width: 64
+  depth: 2
+  act_fn: "tanh"
+  exp_std: true
+
+wandb:
+  mode: disabled
+  project: "mujoco-pcpg"
+  group: null
+
+seed: 1

@@ -1,0 +1,42 @@
+name: pcpg-hopper-layerwise-matched
+
+workdir: .
+
+resources:
+  accelerators: H200:3
+  disk_size: 100
+
+volumes:
+  /checkpoints: checkpoints
+
+envs:
+  PANTHEON_USER: armin@pantheon.inc
+  EXPERIMENT_TAG: pcpg-hopper-layerwise-matched-damped-aug09
+  CONFIG_PATH: configs/mujoco_hopper_pc_actor_critic_parameter_local_tr_matched.yaml
+
+setup: |
+  set -euo pipefail
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  "$HOME/.local/bin/uv" venv --python 3.12 --seed "$HOME/.pcpg-venv"
+  source "$HOME/.pcpg-venv/bin/activate"
+  python -m pip install --upgrade pip setuptools wheel
+  pip install --ignore-installed blinker -r requirements-gpu.txt
+  pip install --force-reinstall --no-deps -r requirements-cuda124.txt
+
+run: |
+  set -euo pipefail
+  source "$HOME/.pcpg-venv/bin/activate"
+  run_root="/checkpoints/${PANTHEON_USER}/${EXPERIMENT_TAG}"
+  mkdir -p "$run_root/results"
+  if [ -f "$run_root/COMPLETE" ]; then
+    echo "already complete: $run_root"
+    exit 0
+  fi
+  PYTHONPATH=src python scripts/run_mujoco_pc_seeds.py \
+    --config "$CONFIG_PATH" \
+    --seeds 1 2 3 \
+    --gpus 0 1 2 \
+    --total-steps 30000000 \
+    --out-dir "$run_root/results" \
+    2>&1 | tee -a "$run_root/managed_job.log"
+  touch "$run_root/COMPLETE"

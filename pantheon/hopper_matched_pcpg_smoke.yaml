@@ -1,0 +1,33 @@
+name: pcpg-hopper-layerwise-matched-smoke
+
+workdir: .
+
+resources:
+  accelerators: H200:1
+  disk_size: 100
+
+volumes:
+  /checkpoints: checkpoints
+
+envs:
+  PANTHEON_USER: armin@pantheon.inc
+  EXPERIMENT_TAG: pcpg-hopper-layerwise-matched-damped-smoke-aug09
+
+setup: |
+  set -euo pipefail
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  "$HOME/.local/bin/uv" venv --python 3.12 --seed "$HOME/.pcpg-venv"
+  source "$HOME/.pcpg-venv/bin/activate"
+  python -m pip install --upgrade pip setuptools wheel
+  pip install --ignore-installed blinker -r requirements-gpu.txt
+  pip install --force-reinstall --no-deps -r requirements-cuda124.txt
+
+run: |
+  set -euo pipefail
+  source "$HOME/.pcpg-venv/bin/activate"
+  run_root="/checkpoints/${PANTHEON_USER}/${EXPERIMENT_TAG}"
+  mkdir -p "$run_root"
+  PYTHONPATH=src python scripts/run_train.py \
+    --config configs/mujoco_hopper_pc_actor_critic_parameter_local_tr_matched.yaml \
+    --overrides train.total_steps=32768 train.eval_every=25 \
+    2>&1 | tee "$run_root/smoke.log"

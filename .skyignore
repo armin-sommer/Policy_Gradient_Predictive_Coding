@@ -1,0 +1,14 @@
+.git/
+.venv/
+results/
+results_pod/
+runs/
+output/
+outputs/
+tmp/
+experiments/
+*.tgz
+*.tar.gz
+*.pdf
+__pycache__/
+*.pyc

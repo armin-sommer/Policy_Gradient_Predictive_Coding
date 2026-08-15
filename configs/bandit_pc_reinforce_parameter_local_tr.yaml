@@ -1,0 +1,35 @@
+# Categorical direct TR-PCPG with explicit layer-local error neurons.
+env:
+  env_name: "bandit"
+  num_envs: 8
+  arm_means: [1.0, 0.9]
+  deterministic_rewards: true
+
+train:
+  total_steps: 60_000
+  rollout_length: 250
+  gamma: 0.99
+  normalize_advantages: false
+  policy_geometry: "parameter_local_tr"
+  parameter_pc_max_radius: 0.01
+  parameter_pc_cg_iters: 1000
+  # The one-state categorical Fisher is exactly rank one. A float32-appropriate
+  # stopping tolerance prevents CG from iterating into its null space.
+  parameter_pc_cg_tol: 1.0e-5
+  eval_every: 1
+  num_eval_episodes: 200
+
+agent:
+  algorithm: "pc_reinforce"
+  experiment_name: "pc_reinforce_parameter_local_tr"
+  width: 32
+  depth: 2
+  act_fn: "tanh"
+  policy_init_logit_bias: [0.0, 4.0]
+
+wandb:
+  mode: disabled
+  project: "bandit-pcpg"
+  group: null
+
+seed: 1

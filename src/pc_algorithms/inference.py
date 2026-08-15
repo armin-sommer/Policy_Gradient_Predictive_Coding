@@ -1,4 +1,4 @@
-"""PC inference that actually settles at production batch size.
+"""Rate-corrected PC inference at production batch size.
 
 `jpc.make_pc_step` cannot equilibrate a bench minibatch, for three compounding
 reasons found by `scripts/probe_natural_gradient.py` (F1) and
@@ -23,10 +23,13 @@ reasons found by `scripts/probe_natural_gradient.py` (F1) and
 The fix here integrates the *same* ODE at per-sample rate: scale the inference
 vector field by N. The weight step still uses jpc's batch-normalised
 `compute_pc_param_grads`, so gradients remain a mean over the batch and learning
-rates carry over unchanged. Verified in `probe_inference_settling.py`: settled
-activities agree with jpc-integrated-to-`t1=40N` at `cos = 1.000000` (max relative
-difference ~6e-4), and the residual falls below 1e-2 by `t1=5` at every batch size,
-so the existing `max_t1=20` default is already sufficient once the rate is right.
+rates carry over unchanged.
+
+The rate correction fixes the time-scale bug, but it is not a fixed-point
+guarantee: on real ReLU MuJoCo batches, the activity-gradient residual plateaus
+above zero.  The learning-relevant PC parameter gradient converges by roughly
+per-sample time 3-5, so `max_t1=20` is a conservative stable-update budget rather
+than evidence that `dF/dz == 0`. See `scripts/probe_settling_budget.py`.
 
 This is a drop-in replacement for `jpc.make_pc_step` on the arguments the callers
 use, returning the same keys.
@@ -39,14 +42,33 @@ import jax.numpy as jnp
 import jpc
 
 
+def initialize_activities(model, obs):
+    """Forward-initialize every PC activity before starting inference.
+
+    The free hidden activities must start at the model's complete feedforward
+    trajectory, not at zeros or at a stale state from a previous minibatch.  Keep
+    the predicted output in the tree as well: jpc's energy expects one activity
+    for every model layer even though its supervised energy clamps the target at
+    the final layer.  This is equivalent to
+    ``jpc.init_activities_with_ffwd(model=model, input=obs)``, but makes the
+    initialization invariant explicit in PCPG's inference implementation.
+    """
+    activities = []
+    activity = obs
+    for layer in model:
+        activity = jax.vmap(layer)(activity)
+        activities.append(activity)
+    return activities
+
+
 def settle_activities(model, obs, output, *, max_t1=20, rate_correction=True,
                       dt=None, rtol=1e-3, atol=1e-3, max_steps=1_000_000):
-    """Integrate the inference dynamics and return the settled activities.
+    """Integrate inference from a complete feedforward activity trajectory.
 
     `rate_correction=False` reproduces jpc's timescale exactly (rate 1), which is
     what the committed runs did; `True` runs the per-sample dynamics at unit speed.
     """
-    acts0 = jpc.init_activities_with_ffwd(model=model, input=obs)
+    acts0 = initialize_activities(model, obs)
     if max_t1 <= 0:
         return acts0, acts0
 
@@ -81,7 +103,7 @@ def settle_activities(model, obs, output, *, max_t1=20, rate_correction=True,
 def make_pc_step_at_rate(model, optim, opt_state, output, input, *,
                          max_t1=20, rate_correction=True, grad_norms=False,
                          dt=None, rtol=1e-3, atol=1e-3, max_steps=1_000_000):
-    """One PC update with a settled-inference guarantee.
+    """One PC update with rate-corrected inference.
 
     Signature mirrors the `jpc.make_pc_step(...)` calls in pc_actor_critic /
     pc_reinforce; returns the same keys ("model", "opt_state", "loss",

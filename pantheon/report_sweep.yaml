@@ -1,0 +1,71 @@
+name: pcpg-report-completed-sweep
+
+workdir: .
+
+resources:
+  accelerators: H200:1
+  disk_size: 10
+
+volumes:
+  /checkpoints: checkpoints
+
+envs:
+  PANTHEON_USER: armin@pantheon.inc
+  REPORT_TAG: pcpg-hopper-localtr-sweep-aug08-v4
+
+run: |
+  set -euo pipefail
+  result_root="/checkpoints/${PANTHEON_USER}/${REPORT_TAG}/results"
+  python - "$result_root" <<'PY'
+  import json
+  import re
+  import sys
+  from pathlib import Path
+
+  root = Path(sys.argv[1])
+  print(f"requested_result_root={root} exists={root.exists()}")
+  if root.exists():
+      print("result_files=", [path.name for path in root.iterdir()])
+  score_pattern = re.compile(
+      r"'eval/mean_score': (?:np\.float(?:32|64)\()?([-+0-9.eE]+)")
+  ranking = []
+  for status_path in sorted(root.glob("*.status.json")):
+      metadata = json.loads(status_path.read_text())
+      if metadata.get("state") != "complete":
+          continue
+      log_path = status_path.with_suffix("").with_suffix(".log")
+      log_text = log_path.read_text(errors="replace")
+      matches = score_pattern.findall(log_text)
+      if matches:
+          diagnostics = {}
+          for key in (
+              "diag/parameter_pc_kkt",
+              "diag/parameter_pc_fisher_cosine",
+              "diag/parameter_pc_actual_kl",
+              "diag/value_explained_var",
+              "diag/log_std_mean",
+              "diag/frac_std_at_min",
+          ):
+              values = re.findall(
+                  rf"'{re.escape(key)}': ([-+0-9.eE]+)", log_text)
+              diagnostics[key] = float(values[-1]) if values else None
+          ranking.append({
+              "variant": metadata["variant"],
+              "seed": metadata["seed"],
+              "final_score": float(matches[-1]),
+              "peak_score": max(map(float, matches)),
+              **diagnostics,
+          })
+      else:
+          eval_lines = [
+              line for line in log_text.splitlines()
+              if "eval/mean_score" in line
+          ]
+          print(json.dumps({
+              "variant": metadata.get("variant"),
+              "state": metadata.get("state"),
+              "last_eval_line": eval_lines[-1] if eval_lines else None,
+          }))
+  ranking.sort(key=lambda row: row["final_score"], reverse=True)
+  print(json.dumps(ranking, indent=2))
+  PY

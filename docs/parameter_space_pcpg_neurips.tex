@@ -1,0 +1,365 @@
+\documentclass{article}
+
+\usepackage[main]{neurips_2026}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\hypersetup{hidelinks}
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{proposition}{Proposition}
+\newtheorem{assumption}{Assumption}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\Fout}{F_{\mathrm{out}}}
+\newcommand{\Fouti}{F_{\mathrm{out},i}}
+\newcommand{\Fpol}{F_{\theta}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\code}[1]{\texttt{#1}}
+
+\title{When Does Predictive Coding Produce a Policy Natural Gradient?\\
+Parameter-Space NPG and Trust-Region PCPG}
+
+\author{Anonymous Authors}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Predictive coding (PC) has been interpreted as an adaptive trust-region method, but this does not imply that ordinary hidden-activity PC implements a natural policy gradient in parameter space. We isolate the missing condition: the inferred free variable must be a parameter displacement shared across rollout samples. For a diagonal-Gaussian policy, we construct a quadratic PC energy whose exact fixed point is the damped natural-gradient direction $(\Fpol+\lambda I)^{-1}g$. We derive an equivalent layer-local error-neuron system, implement the eliminated energy using Jacobian-vector products, analytic output precision, vector-Jacobian products, and conjugate-gradient inference, and add a trust-region variant that jointly infers a nonnegative precision $\beta$. No line search or update rejection is used. Synthetic tests give Fisher-equation cosine $0.99999994$ and exact agreement between local and global perturbations. Four consecutive HalfCheetah updates place the local Fisher radius at $0.01$ with inferred $\beta\in[3.45,3.97]$; actual nonlinear KL is larger, $0.0438$--$0.0604$. These results validate the local geometry and integration, not a nonlinear-KL guarantee or asymptotic control performance.
+\end{abstract}
+
+\section{Introduction}
+
+Predictive coding networks infer latent neural activities by minimizing local prediction-error energies and then update synaptic parameters from settled errors. Innocenti et al.~\citep{innocenti2023} show that this process can be understood as an adaptive trust-region method in neural-activity space. In policy optimization, however, ``trust region'' usually means a bound on policy KL, while ``natural gradient'' means preconditioning the policy gradient by the inverse parameter Fisher~\citep{kakade2001,schulman2015}. These are different geometric claims.
+
+Existing policy-PC constructions in this repository infer per-sample hidden activities or output targets and then consolidate them with an ordinary PC weight update. Even at activity convergence, their parameter update is generally a Jacobian-transpose mapping of an output displacement. It is not generally $(\Fpol+\lambda I)^{-1}g$. This distinction explains why converged tanh PCPG probes were not aligned with exact natural-gradient directions.
+
+This paper makes four contributions. First, it gives sufficient assumptions under which PC inference exactly produces a damped parameter-space natural gradient. Second, it derives an equivalent layerwise error-neuron formulation with shared parameter perturbation activities. Third, it implements natural-gradient PCPG (NPG-PCPG) and trust-region PCPG (TR-PCPG) without materializing a Fisher matrix. Fourth, it validates the fixed-point equations and KL constraint synthetically and in short HalfCheetah integration runs.
+
+\section{Geometry of a Gaussian policy}
+
+Let a policy network produce $z_i(\theta)=(\mu_i,\ell_i)$ at state $s_i$, with $\ell_i=\log\sigma_i$. Let $\tilde a_i$ denote the stored pre-tanh Gaussian action and $A_i$ a fixed advantage estimate. Ignoring constants that cancel in likelihood ratios,
+\begin{equation}
+\log\pi_\theta(\tilde a_i\mid s_i)
+=-\frac12\sum_j\left[\frac{(\tilde a_{ij}-\mu_{ij})^2}{\sigma_{ij}^2}+2\ell_{ij}\right].
+\label{eq:logprob}
+\end{equation}
+The advantage-weighted output score $u_i=A_i\nabla_{z_i}\log\pi_\theta$ has components
+\begin{align}
+u_{\mu,i}&=A_i(\tilde a_i-\mu_i)/\sigma_i^2, \\
+u_{\ell,i}&=A_i\left[((\tilde a_i-\mu_i)/\sigma_i)^2-1\right].
+\end{align}
+The expected Fisher in output coordinates is
+\begin{equation}
+\Fouti=\operatorname{diag}(\sigma_i^{-2}I,2I).
+\label{eq:fout}
+\end{equation}
+If log standard deviation is clipped, both the log-std score and its Fisher block are multiplied by the local derivative mask of the clipping map.
+
+Writing $J_i=\partial z_i/\partial\theta$, the empirical policy gradient and Fisher are
+\begin{equation}
+g=\frac1N\sum_iJ_i^\top u_i,
+\qquad
+\Fpol=\frac1N\sum_iJ_i^\top\Fouti J_i.
+\label{eq:gfisher}
+\end{equation}
+Locally, $N^{-1}\sum_i\KL(\pi_\theta(\cdot\mid s_i)\Vert\pi_{\theta+d}(\cdot\mid s_i))\approx\frac12d^\top\Fpol d$. The output inverse $\Fouti^{-1}$ alone therefore does not provide $\Fpol^{-1}$ for a shared neural policy.
+
+\section{Parameter-space predictive coding}
+
+\subsection{Assumptions}
+
+\begin{assumption}[Fixed rollout]
+States, pre-tanh actions, advantages, and old-policy outputs are held fixed during one inference solve.
+\end{assumption}
+\begin{assumption}[Local differentiability]
+The policy output is differentiable at the current parameters. For clipped outputs or piecewise-linear networks, the active derivative mask is fixed over the local model.
+\end{assumption}
+\begin{assumption}[Shared displacement]
+The free PC variable $d\in\R^{|\theta|}$ is one parameter displacement shared by all rollout samples, rather than one hidden activity per sample.
+\end{assumption}
+\begin{assumption}[Regularization]
+$\lambda>0$, or the zero-damping solution is defined by the Moore--Penrose pseudoinverse of the generally singular empirical Fisher.
+\end{assumption}
+
+Define the natural output displacement $r_i=\Fouti^{-1}u_i$ and the energy
+\begin{equation}
+E_{\mathrm{NPG}}(d)=\frac{1}{2N}\sum_i\|J_id-r_i\|_{\Fouti}^2
++\frac\lambda2\|d\|^2.
+\label{eq:npgenergy}
+\end{equation}
+
+\begin{theorem}[PC fixed point is a damped natural gradient]
+Under Assumptions 1--4, the unique minimizer of Eq.~\eqref{eq:npgenergy} is
+\begin{equation}
+d^*=(\Fpol+\lambda I)^{-1}g.
+\label{eq:npgsolution}
+\end{equation}
+At $\lambda=0$, the minimum-norm solution is $d^*=\Fpol^+g$ when $g$ lies in the range of $\Fpol$.
+\end{theorem}
+\begin{proof}
+Expanding Eq.~\eqref{eq:npgenergy} and using $r_i=\Fouti^{-1}u_i$ gives
+\begin{equation}
+E_{\mathrm{NPG}}(d)=\tfrac12d^\top\Fpol d-g^\top d+\tfrac\lambda2d^\top d+C.
+\end{equation}
+Thus $\nabla_dE=(\Fpol+\lambda I)d-g$. Positive damping makes the Hessian positive definite, yielding Eq.~\eqref{eq:npgsolution}. The pseudoinverse statement follows from the minimum-norm solution of the undamped normal equations. Full algebra appears in Appendix~\ref{app:proof}.
+\end{proof}
+
+Gradient-flow inference, $\tau\dot d=g-(\Fpol+\lambda I)d$, has the same fixed point. The implementation instead applies conjugate gradients (CG) to this quadratic energy. CG is an accelerated inference procedure, not a change to the objective.
+
+\subsection{Implicit Fisher computation}
+
+No Fisher matrix is formed. For a vector $v$, the exact empirical Fisher-vector product is evaluated as
+\begin{equation}
+v\xrightarrow{\mathrm{JVP}}Jv
+\xrightarrow{\Fout}\Fout Jv
+\xrightarrow{\mathrm{VJP}}J^\top\Fout Jv=\Fpol v.
+\label{eq:fvp}
+\end{equation}
+The method is therefore implicit in computation but explicitly Fisher-metric in mathematics.
+
+\section{Equivalent layerwise error neurons}
+
+The production solver eliminates intermediate perturbation activities. To expose a local PC interpretation, consider the JPC layer convention
+\begin{equation}
+h_l=W_l\phi_l(h_{l-1})+b_l.
+\end{equation}
+Introduce activity perturbations $\Delta h_l$ and parameter activities $(\Delta W_l,\Delta b_l)$. Their linearized local constraint is
+\begin{equation}
+c_l=\Delta h_l-W_lD_l\Delta h_{l-1}
+-\Delta W_l\phi_l(h_{l-1})-\Delta b_l=0,
+\label{eq:constraint}
+\end{equation}
+where $D_l$ is the activation Jacobian. Attach an error-neuron population $q_l$ to each constraint and define
+\begin{equation}
+\mathcal L=\frac1N\sum_i\left[
+\tfrac12\Delta z_i^\top\Fouti\Delta z_i-u_i^\top\Delta z_i
++\sum_lq_{li}^\top c_{li}\right]+\frac\lambda2\|\Delta\theta\|^2.
+\label{eq:lagrangian}
+\end{equation}
+Stationarity yields the local equations
+\begin{align}
+q_{L,i}&=u_i-\Fouti\Delta z_i, \\
+q_{l,i}&=D_{l+1,i}^\top W_{l+1}^\top q_{l+1,i}, \\
+\lambda\Delta W_l&=\frac1N\sum_iq_{l,i}\phi_l(h_{l-1,i})^\top,
+\quad
+\lambda\Delta b_l=\frac1N\sum_iq_{l,i}.
+\label{eq:localstationarity}
+\end{align}
+These have the error-neuron form: an output mismatch drives $q_L$, neighboring weights and activation derivatives transmit errors, and local Hebbian products drive shared parameter activities. Eliminating Eq.~\eqref{eq:constraint} gives $\Delta z_i=J_i\Delta\theta$ and recovers Eq.~\eqref{eq:npgenergy}. The implemented diagnostic checks both representations, but production uses autodiff JVP/VJP and CG; it is not an asynchronous biologically local simulator.
+
+\section{NPG-PCPG and trust-region PCPG}
+
+\subsection{Fixed-scale NPG-PCPG}
+NPG-PCPG infers $d^*$ and directly applies $\theta'=\theta+\eta d^*$. For the reported HalfCheetah runs, $\eta=0.05$. There is no acceptance test. Adam or SGD is not applied afterward because an additional optimizer would re-precondition the inferred direction.
+
+\subsection{Trust-region PCPG}
+The local quadratic trust-region subproblem is
+\begin{equation}
+\max_s g^\top s
+\quad\text{s.t.}\quad
+\tfrac12s^\top\Fpol s\leq\delta.
+\label{eq:trproblem}
+\end{equation}
+Introduce a nonnegative precision neuron $\beta$ and the saddle energy
+\begin{equation}
+E_{\mathrm{TR}}(d,\beta)=-g^\top d
++\beta\left(\tfrac12d^\top\Fpol d-\epsilon\right),
+\qquad \beta\geq0.
+\label{eq:trenergy}
+\end{equation}
+The parameter neurons descend in $d$, while the precision neuron ascends in $\beta$. At an active-boundary equilibrium,
+\begin{equation}
+\beta\Fpol d=g,
+\qquad
+\tfrac12d^\top\Fpol d=\epsilon.
+\label{eq:trkkt}
+\end{equation}
+Let $d_0=\Fpol^+g$ and $k_0=\frac12d_0^\top\Fpol d_0$. Solving Eq.~\eqref{eq:trkkt} gives
+\begin{equation}
+\beta^*=\sqrt{k_0/\epsilon},
+\qquad
+d_{\mathrm{TR}}=d_0/\beta^*.
+\label{eq:betasolution}
+\end{equation}
+An explicit local implementation may use projected dual ascent
+$\beta\leftarrow\max(0,\beta+\eta_\beta(R-\epsilon))$.
+Here $\eta_\beta$ is only an inference-rate constant and does not change the settled solution. The production implementation computes $\beta^*$ directly from Eq.~\eqref{eq:betasolution}; consequently, no $\eta_\beta$ is present in the reported runs.
+
+The resulting update is applied directly with no line search, clipping, or rejection. Closed-form old-to-new Gaussian KL is still logged as a diagnostic, but it does not affect the update. Thus TR-PCPG enforces the local Fisher radius, not the exact KL of the nonlinear post-update policy.
+
+\begin{figure}[t]
+\centering
+\fbox{\begin{minipage}{0.94\linewidth}
+\textbf{Parameter-space PC update.}
+(1) Feed forward all rollout states and retain old outputs.
+(2) Form $g$ from fixed advantages and pre-tanh actions.
+(3) Infer $d$ by CG using the implicit operator $v\mapsto\Fpol v+\lambda v$.
+(4a) NPG: apply the external scale $\eta$.
+(4b) TR: infer $\beta$ so the local Fisher radius equals $\epsilon$, then apply $d/\beta$ directly.
+\end{minipage}}
+\caption{Both algorithms share the same predictive-coding energy inference. They differ only in how the settled parameter activity is converted into a finite policy step.}
+\label{fig:algorithm}
+\end{figure}
+
+\section{Experiments}
+
+\subsection{Synthetic equivalence}
+We use a tanh JPC MLP with 128 samples, observation dimension 5, action dimension 2, width 8, depth 2, and $\lambda=0.1$. Table~\ref{tab:synthetic} verifies the global normal equations, local error-neuron equations, and trust-region boundary.
+
+\begin{table}[h]
+\caption{Synthetic fixed-point and equivalence checks on the supplied GPU.}
+\label{tab:synthetic}
+\centering
+\small
+\begin{tabular}{lr}
+\toprule
+Measurement & Result \\
+\midrule
+Relative global KKT residual & $2.293\times10^{-4}$ \\
+$\cos((\Fpol+\lambda I)d,g)$ & $0.999999940$ \\
+Layerwise activity-constraint RMS & $0$ \\
+Maximum local/global output-JVP error & $0$ \\
+Relative layerwise parameter KKT residual & $9.082\times10^{-4}$ \\
+NPG finite-step empirical KL & $2.351\times10^{-5}$ \\
+TR local radius / actual KL & $0.010000 / 1.281124$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{HalfCheetah integration}
+The integration run uses seed 1, 256 environments, rollout length 32, a tanh policy of width 64 and depth 2, normalized observations, rewards, and advantages. NPG uses $\lambda=0.1$, 50 CG iterations, and $\eta=0.05$. Direct TR uses $\lambda=0$ and 1000 CG iterations because the undamped empirical Fisher is ill-conditioned. Four updates cover 32,768 environment steps. Table~\ref{tab:mujoco} reports geometry diagnostics, not final control performance.
+
+\begin{table}[h]
+\caption{Ranges over four consecutive HalfCheetah updates.}
+\label{tab:mujoco}
+\centering
+\small
+\begin{tabular}{lcc}
+\toprule
+Metric & NPG-PCPG & TR-PCPG \\
+\midrule
+Fisher-equation cosine & $0.99999964$--$1.00000000$ & $0.99998391$--$0.99998969$ \\
+Relative KKT residual & $2.58$--$3.20\times10^{-4}$ & $0.00471$--$0.00559$ \\
+Local Fisher radius & $3.23$--$4.74\times10^{-5}$ & $0.010000$ \\
+Actual full-batch KL & $3.276$--$4.789\times10^{-5}$ & $0.04383$--$0.06044$ \\
+Inferred precision $\beta$ & $1$ & $3.451$--$3.970$ \\
+Applied scale & $\eta=0.05$ & $1/\beta=0.252$--$0.290$ \\
+\bottomrule
+\end{tabular}
+\vspace{2pt}
+\begin{minipage}{0.98\linewidth}\footnotesize
+TR is applied directly. Actual KL is diagnostic and can exceed the local radius because the policy is nonlinear.
+\end{minipage}
+\end{table}
+
+Both variants remain finite and improve the sampled surrogate without an acceptance rule. The Fisher-equation cosine stays near one. Direct TR-PCPG reaches the requested local radius on every update, while actual KL is roughly four to six times larger. These short runs do not measure asymptotic return, sample efficiency, or variance across seeds.
+
+\section{Related work}
+
+Natural policy gradient follows the Riemannian geometry induced by the policy Fisher~\citep{kakade2001}. TRPO solves a local KL-constrained problem using implicit Fisher-vector products and CG~\citep{schulman2015}; PPO approximates a trust region through a clipped likelihood-ratio objective~\citep{schulman2017}. Predictive coding has been related to backpropagation, Gauss--Newton structure, and adaptive trust regions~\citep{whittington2017,innocenti2023}. The present construction should be read narrowly: it expresses an FVP/CG natural-gradient or TRPO solve as inference in a PC energy over shared parameter perturbations. It does not show that ordinary hidden-activity PC is automatically NPG.
+
+\section{Limitations and conclusion}
+
+The guarantee is local and empirical. It assumes a fixed rollout, fixed advantages, a differentiable local policy model, and a diagonal Gaussian with network-emitted log standard deviation. ReLU networks admit JVPs almost everywhere, but crossing activation kinks changes the local model discontinuously; tanh is therefore used in the reported experiments. Damping stabilizes singular empirical Fishers but changes the direction from the undamped NPG. Finite CG tolerance introduces solve error, and the trust region is enforced only on sampled rollout states. The explicit error-neuron equations are local, but the production implementation uses global autodiff operators and is not a biologically local neural simulation.
+
+The supplied GPU reports CUDA \code{ptxas 12.4.131} and warns that CUDA versions through 12.6.2 can miscompile clamping edge cases. All checks pass, but experiments should be repeated on CUDA 12.6.3 or newer because the policy clips log standard deviation. Finally, four updates and one seed are insufficient for performance claims; matched multi-seed comparisons against PPO and TRPO remain necessary.
+
+Subject to these limitations, the central result is exact: if the inferred PC state is a shared parameter displacement and the output precision is the policy output Fisher, settled quadratic inference yields the damped parameter-space natural gradient. Jointly inferring the nonnegative precision yields the local quadratic trust-region boundary directly, without a line search or update rejection.
+
+\begin{thebibliography}{9}
+\bibitem[Innocenti et~al.(2023)Innocenti, Singh, and Buckley]{innocenti2023}
+Innocenti, L., Singh, B., and Buckley, C. L. (2023).
+Understanding predictive coding as an adaptive trust-region method.
+\emph{arXiv preprint arXiv:2305.18188}.
+
+\bibitem[Kakade(2001)]{kakade2001}
+Kakade, S. (2001).
+A natural policy gradient.
+\emph{Advances in Neural Information Processing Systems 14}.
+
+\bibitem[Schulman et~al.(2015)Schulman, Levine, Moritz, Jordan, and Abbeel]{schulman2015}
+Schulman, J., Levine, S., Moritz, P., Jordan, M. I., and Abbeel, P. (2015).
+Trust region policy optimization.
+\emph{Proceedings of ICML}.
+
+\bibitem[Schulman et~al.(2017)Schulman, Wolski, Dhariwal, Radford, and Klimov]{schulman2017}
+Schulman, J., Wolski, F., Dhariwal, P., Radford, A., and Klimov, O. (2017).
+Proximal policy optimization algorithms.
+\emph{arXiv preprint arXiv:1707.06347}.
+
+\bibitem[Whittington and Bogacz(2017)]{whittington2017}
+Whittington, J. C. R. and Bogacz, R. (2017).
+An approximation of the error backpropagation algorithm in a predictive coding network with local Hebbian synaptic plasticity.
+\emph{Neural Computation}, 29(5):1229--1262.
+\end{thebibliography}
+
+\appendix
+\section{Detailed proof of the parameter-space result}
+\label{app:proof}
+
+For $\|x\|_M^2=x^\top Mx$, substitute $r_i=\Fouti^{-1}u_i$ into Eq.~\eqref{eq:npgenergy}:
+\begin{align}
+E(d)
+&=\frac{1}{2N}\sum_i
+(J_id-r_i)^\top\Fouti(J_id-r_i)+\frac\lambda2d^\top d \\
+&=\frac{1}{2N}\sum_i\left[
+d^\top J_i^\top\Fouti J_id
+-2d^\top J_i^\top\Fouti r_i
++r_i^\top\Fouti r_i\right]+\frac\lambda2d^\top d \\
+&=\frac12d^\top\left(\frac1N\sum_iJ_i^\top\Fouti J_i\right)d
+-d^\top\left(\frac1N\sum_iJ_i^\top u_i\right)
++\frac\lambda2d^\top d+C \\
+&=\frac12d^\top(\Fpol+\lambda I)d-g^\top d+C.
+\end{align}
+Differentiation gives $(\Fpol+\lambda I)d-g$. For $\lambda>0$, the Hessian is positive definite because $\Fpol$ is positive semidefinite, so the fixed point is unique. At $\lambda=0$, all minimizers satisfy $\Fpol d=g$; $\Fpol^+g$ is the minimum-norm solution when the system is consistent.
+
+\section{Initialization and local elimination}
+
+Every update begins with a feedforward initialization of all base activities $h_l$. Perturbation activities are initialized at zero and propagated through Eq.~\eqref{eq:constraint}. Given a parameter tangent $\Delta\theta$, exact elimination recursively produces all $\Delta h_l$ and hence $\Delta z_i=J_i\Delta\theta$. Conversely, the dual equations~\eqref{eq:localstationarity} propagate the output residual $u_i-\Fouti\Delta z_i$ backward. Parameter stationarity combines these sample-local errors into the one shared $\Delta\theta$. The test module evaluates the primal constraints, global/local output-JVP agreement, and local parameter KKT residual.
+
+\section{Implementation and reproduction}
+
+The production implementation is in \code{src/pc\_algorithms/parameter\_space\_pc.py}. The explicit local diagnostic is \code{src/pc\_algorithms/error\_neuron\_graph.py}; trainer integration is in \code{src/pc\_algorithms/pc\_actor\_critic.py}. The configurations are \code{configs/mujoco\_halfcheetah\_pc\_actor\_critic\_parameter\_npg.yaml} and \code{...\_parameter\_tr.yaml}.
+
+\begin{verbatim}
+PYTHONPATH=src python scripts/test_parameter_space_pc.py
+
+python scripts/run_train.py \
+  --config configs/mujoco_halfcheetah_pc_actor_critic_parameter_npg.yaml
+
+python scripts/run_train.py \
+  --config configs/mujoco_halfcheetah_pc_actor_critic_parameter_tr.yaml
+\end{verbatim}
+
+NPG scale $\eta$ is controlled by \code{parameter\_pc\_step\_size}; the ordinary policy optimizer learning rate is unused in parameter-PC modes. TR uses \code{parameter\_pc\_max\_radius} and directly applies the inferred scale $1/\beta$; there are no line-search or backtracking settings. Value-PC retains the existing minibatch updates, while the policy performs one shared full-rollout parameter inference per rollout.
+
+\section*{NeurIPS paper checklist}
+
+\begin{enumerate}[leftmargin=*]
+\item \textbf{Claims.} \textbf{Yes.} The abstract and Sections 1 and 8 limit the claims to geometry and integration checks and explicitly exclude control-performance claims.
+\item \textbf{Limitations.} \textbf{Yes.} Section 8 discusses local linearization, damping, finite CG, sampled-state KL, policy class, biological locality, compute warnings, and absent multi-seed evaluation.
+\item \textbf{Theory assumptions and proofs.} \textbf{Yes.} Assumptions 1--4 precede Theorem 1; the proof is given in Section 3 and expanded in Appendix A.
+\item \textbf{Experimental reproducibility.} \textbf{Yes.} Section 6 and Appendix C provide architecture, batch, seed, damping, solver, environment, commands, and code locations.
+\item \textbf{Open access to data and code.} \textbf{No.} The code exists in the working repository, but no public archival URL or license is asserted in this manuscript.
+\item \textbf{Experimental setting/details.} \textbf{Yes.} Section 6 specifies the synthetic and HalfCheetah settings relevant to the reported diagnostics.
+\item \textbf{Statistical significance.} \textbf{No.} The experiments are deterministic diagnostic and short integration checks at one seed; no performance or population claim is made.
+\item \textbf{Compute resources.} \textbf{No.} The supplied CUDA toolchain and update timing were observed, but the GPU model and memory were not recorded.
+\item \textbf{Code of ethics.} \textbf{Yes.} The work concerns optimization geometry and uses no human data, private data, or deployed decision system.
+\item \textbf{Broader impacts.} \textbf{N/A.} This is foundational optimizer analysis without a direct application or deployed model.
+\item \textbf{Safeguards.} \textbf{N/A.} No high-risk model or dataset is released.
+\item \textbf{Licenses for existing assets.} \textbf{No.} The manuscript cites methods and environments but does not yet audit all software-package licenses; this is required before submission.
+\item \textbf{New assets.} \textbf{Yes.} New implementation modules and reproducibility commands are documented in Appendix C; a public release and license remain future work.
+\item \textbf{Crowdsourcing and human subjects.} \textbf{N/A.} No crowdsourcing or human-subject research is involved.
+\item \textbf{IRB approvals.} \textbf{N/A.} No human-subject research is involved.
+\item \textbf{Declaration of LLM usage.} \textbf{N/A.} No LLM is part of the method or experiments; use for writing or formatting does not affect the scientific procedure.
+\end{enumerate}
+
+\end{document}

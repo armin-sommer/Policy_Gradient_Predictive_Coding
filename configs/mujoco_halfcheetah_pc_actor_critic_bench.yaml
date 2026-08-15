@@ -35,6 +35,9 @@ agent:
   experiment_name: "pc_actor_critic_mujoco_bench"
   width: 64
   depth: 2
+  # Smooth latent dynamics converge to a fixed point; ReLU leaves a nonzero
+  # activity-gradient floor on the same real rollout batches.
+  act_fn: "tanh"
   exp_std: true
 
 wandb:

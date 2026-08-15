@@ -23,6 +23,6 @@ wandb
 # Predictive coding (the PCPG algorithms). Required for any pc_actor_critic /
 # pc_reinforce run — without these the image can only run the backprop baselines.
 # Versions are the ones the CPU probe results were produced with.
-jpc==1.0.0
+jpc @ git+https://github.com/thebuckleylab/jpc
 equinox==0.13.8
 diffrax==0.7.2

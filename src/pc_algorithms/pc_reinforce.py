@@ -24,6 +24,9 @@ from pc_algorithms.gaussian_policy import (
     split_gaussian_params,
 )
 from pc_algorithms.inference import make_pc_step_at_rate
+from pc_algorithms.parameter_space_pc import (
+    make_categorical_parameter_pc_policy_step,
+)
 from pc_algorithms.pc_eval import evaluate_discrete_policy, evaluate_gaussian_policy
 from pc_algorithms.returns import compute_mc_returns
 
@@ -93,6 +96,12 @@ class Config:
     # Raise the log_std floor to tame the 1/sigma^2 amplifier (None = default -2;
     # e.g. -1 -> sigma_min 0.37, so 1/sigma^2 caps at ~7 instead of ~55).
     log_std_min = None
+    # Discrete parameter-space PC currently supports the explicit layerwise
+    # direct trust-region geometry.
+    policy_geometry = 'target'
+    parameter_pc_max_radius = 0.01
+    parameter_pc_cg_iters = 50
+    parameter_pc_cg_tol = 1e-8
 
     width = 32
     depth = 2
@@ -164,6 +173,14 @@ def main(_):
     action_size = envs.action_space.n
     policy_output_dim = 2 * action_size if continuous else action_size
     obs_dim = int(np.prod(env_state.obs.shape[1:]))
+    use_parameter = (
+        not continuous and Config.policy_geometry == 'parameter_local_tr')
+    if Config.policy_geometry not in ('target', 'parameter_local_tr'):
+        raise ValueError(
+            "pc_reinforce policy_geometry must be target or parameter_local_tr")
+    if continuous and Config.policy_geometry != 'target':
+        raise ValueError(
+            "pc_reinforce parameter_local_tr currently supports discrete policies")
 
     model = jpc.make_mlp(
         key_model,
@@ -295,67 +312,84 @@ def main(_):
         pgn_sum = jnp.array(0.0)
         pgn_cnt = 0
 
-        for _ in range(Config.update_epochs):
-            key, key_perm = jr.split(key)
-            perm = np.asarray(jr.permutation(key_perm, batch_size))[:usable]
-            for mb_idx in perm.reshape(mb_count, -1):
-                mb_obs = jnp.asarray(observations[mb_idx])
-                mb_adv = jnp.asarray(advantages[mb_idx])
-                # recompute targets from the current policy (PPO-style reuse)
-                params_mb = policy_forward(model, mb_obs)
-                if continuous and state_indep:
-                    mb_pre_tanh = jnp.asarray(pre_tanh_flat[mb_idx])
-                    params_mb_std = _with_global_std(params_mb)
-                    # mean target uses the global sigma; std head is frozen by
-                    # targeting its own current output (zero error there).
-                    targets = gaussian_pc_targets(
-                        params_mb_std, mb_pre_tanh, mb_adv,
-                        action_size, Config.target_scale, exp_std=Config.exp_std,
-                        target_clip=Config.target_clip,
-                        target_clip_rel=Config.target_clip_rel,
-                        natural_target=Config.natural_target)
-                    targets = targets.at[:, action_size:].set(
-                        params_mb[:, action_size:])
-                    # global log_std <- batch-averaged Gaussian score on log_std,
-                    # the same signal PPO's state-independent log_std receives.
-                    loc_mb, scale_mb, _ = split_gaussian_params(
-                        params_mb_std, action_size, exp_std=Config.exp_std)
-                    z_mb = (mb_pre_tanh - loc_mb) / scale_mb
-                    dstd = Config.target_scale * (
-                        mb_adv[:, None] * (jnp.square(z_mb) - 1.0)).mean(0)
-                    if Config.natural_target:
-                        dstd = dstd * 0.5  # F^-1 on log_std channel
-                    policy_log_std = jnp.clip(
-                        policy_log_std + dstd, gpol.LOG_STD_MIN, LOG_STD_MAX)
-                elif continuous:
-                    targets = gaussian_pc_targets(
-                        params_mb, jnp.asarray(pre_tanh_flat[mb_idx]), mb_adv,
-                        action_size, Config.target_scale, exp_std=Config.exp_std,
-                        target_clip=Config.target_clip,
-                        target_clip_rel=Config.target_clip_rel,
-                        natural_target=Config.natural_target)
-                else:
-                    targets = discrete_pc_targets(
-                        params_mb, jnp.asarray(actions_flat[mb_idx]).astype(jnp.int32),
-                        mb_adv, action_size, Config.target_scale)
-                for _ in range(Config.pc_steps_per_update):
-                    _pc_step = (make_pc_step_at_rate
-                                if Config.inference_rate_correction
-                                else jpc.make_pc_step)
-                    result = _pc_step(
-                        model=model,
-                        optim=optim,
-                        opt_state=opt_state,
-                        output=targets,
-                        input=mb_obs,
-                        max_t1=Config.max_t1,
-                        grad_norms=True,
-                    )
-                    model, opt_state = result["model"], result["opt_state"]
-                    gnorm = _global_norm(result["model_grad_norms"])
-                    pgn_max = jnp.maximum(pgn_max, gnorm)
-                    pgn_sum = pgn_sum + gnorm
-                    pgn_cnt += 1
+        if use_parameter:
+            result = make_categorical_parameter_pc_policy_step(
+                model,
+                jnp.asarray(observations),
+                jnp.asarray(actions_flat).astype(jnp.int32),
+                jnp.asarray(advantages),
+                max_radius=Config.parameter_pc_max_radius,
+                cg_iters=Config.parameter_pc_cg_iters,
+                cg_tol=Config.parameter_pc_cg_tol,
+            )
+            model = result["model"]
+            gnorm = result["gradient_norm"]
+            pgn_max = gnorm
+            pgn_sum = gnorm
+            pgn_cnt = 1
+        else:
+            for _ in range(Config.update_epochs):
+                key, key_perm = jr.split(key)
+                perm = np.asarray(jr.permutation(key_perm, batch_size))[:usable]
+                for mb_idx in perm.reshape(mb_count, -1):
+                    mb_obs = jnp.asarray(observations[mb_idx])
+                    mb_adv = jnp.asarray(advantages[mb_idx])
+                    # Recompute targets from the current policy each minibatch.
+                    params_mb = policy_forward(model, mb_obs)
+                    if continuous and state_indep:
+                        mb_pre_tanh = jnp.asarray(pre_tanh_flat[mb_idx])
+                        params_mb_std = _with_global_std(params_mb)
+                        # mean target uses the global sigma; std head is frozen by
+                        # targeting its own current output (zero error there).
+                        targets = gaussian_pc_targets(
+                            params_mb_std, mb_pre_tanh, mb_adv,
+                            action_size, Config.target_scale, exp_std=Config.exp_std,
+                            target_clip=Config.target_clip,
+                            target_clip_rel=Config.target_clip_rel,
+                            natural_target=Config.natural_target)
+                        targets = targets.at[:, action_size:].set(
+                            params_mb[:, action_size:])
+                        # global log_std <- batch-averaged Gaussian score on log_std,
+                        # the same signal PPO's state-independent log_std receives.
+                        loc_mb, scale_mb, _ = split_gaussian_params(
+                            params_mb_std, action_size, exp_std=Config.exp_std)
+                        z_mb = (mb_pre_tanh - loc_mb) / scale_mb
+                        dstd = Config.target_scale * (
+                            mb_adv[:, None] * (jnp.square(z_mb) - 1.0)).mean(0)
+                        if Config.natural_target:
+                            dstd = dstd * 0.5  # F^-1 on log_std channel
+                        policy_log_std = jnp.clip(
+                            policy_log_std + dstd, gpol.LOG_STD_MIN, LOG_STD_MAX)
+                    elif continuous:
+                        targets = gaussian_pc_targets(
+                            params_mb, jnp.asarray(pre_tanh_flat[mb_idx]), mb_adv,
+                            action_size, Config.target_scale, exp_std=Config.exp_std,
+                            target_clip=Config.target_clip,
+                            target_clip_rel=Config.target_clip_rel,
+                            natural_target=Config.natural_target)
+                    else:
+                        targets = discrete_pc_targets(
+                            params_mb,
+                            jnp.asarray(actions_flat[mb_idx]).astype(jnp.int32),
+                            mb_adv, action_size, Config.target_scale)
+                    for _ in range(Config.pc_steps_per_update):
+                        _pc_step = (make_pc_step_at_rate
+                                    if Config.inference_rate_correction
+                                    else jpc.make_pc_step)
+                        result = _pc_step(
+                            model=model,
+                            optim=optim,
+                            opt_state=opt_state,
+                            output=targets,
+                            input=mb_obs,
+                            max_t1=Config.max_t1,
+                            grad_norms=True,
+                        )
+                        model, opt_state = result["model"], result["opt_state"]
+                        gnorm = _global_norm(result["model_grad_norms"])
+                        pgn_max = jnp.maximum(pgn_max, gnorm)
+                        pgn_sum = pgn_sum + gnorm
+                        pgn_cnt += 1
 
         global_step += env_step_per_training_step
         metrics = {
@@ -369,6 +403,20 @@ def main(_):
             'diag/policy_grad_norm_max': float(pgn_max),
             'diag/policy_grad_norm_mean': float(pgn_sum / max(pgn_cnt, 1)),
         }
+        if use_parameter:
+            metrics.update({
+                'diag/parameter_pc_kkt': float(result['relative_kkt']),
+                'diag/parameter_pc_fisher_cosine': float(
+                    result['fisher_equation_cosine']),
+                'diag/parameter_pc_direction_norm': float(
+                    result['direction_norm']),
+                'diag/parameter_pc_quadratic_radius': float(
+                    result['quadratic_radius']),
+                'diag/parameter_pc_actual_kl': float(result['actual_kl']),
+                'diag/parameter_pc_step_scale': float(result['step_scale']),
+                'diag/parameter_pc_precision_beta': float(
+                    result['precision_beta']),
+            })
         if continuous:
             params_post = policy_forward(model, probe_obs)
             if state_indep:

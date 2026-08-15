@@ -1,0 +1,76 @@
+name: pcpg-report-hopper-matched
+
+workdir: .
+
+resources:
+  accelerators: H200:1
+  disk_size: 10
+
+volumes:
+  /checkpoints: checkpoints
+
+envs:
+  PANTHEON_USER: armin@pantheon.inc
+  REPORT_TAG: pcpg-hopper-layerwise-matched-damped-aug09
+
+run: |
+  set -euo pipefail
+  result_root="/checkpoints/${PANTHEON_USER}/${REPORT_TAG}/results"
+  python - "$result_root" <<'PY'
+  import json
+  import re
+  import sys
+  from pathlib import Path
+
+  root = Path(sys.argv[1])
+  print(f"result_root={root} exists={root.exists()}")
+
+  def value(line, key):
+      match = re.search(
+          rf"'{re.escape(key)}': (?:np\.float(?:32|64)\()?([-+0-9.eE]+)",
+          line,
+      )
+      return float(match.group(1)) if match else None
+
+  rows = []
+  for path in sorted(root.glob("*.log")):
+      latest = {}
+      evaluations = []
+      current_step = 0
+      training_end = False
+      for line in path.read_text(errors="replace").splitlines():
+          step = value(line, "training/total_steps")
+          if step is not None:
+              current_step = int(step)
+              latest = {
+                  key: value(line, key)
+                  for key in (
+                      "training/updates",
+                      "training/update_time",
+                      "training/mean_reward",
+                      "diag/value_explained_var",
+                      "diag/parameter_pc_kkt",
+                      "diag/parameter_pc_fisher_cosine",
+                      "diag/parameter_pc_actual_kl",
+                      "diag/policy_kl_mean",
+                      "diag/policy_kl_max",
+                      "diag/log_std_mean",
+                      "diag/frac_std_at_min",
+                  )
+              }
+          score = value(line, "eval/mean_score")
+          if score is not None:
+              evaluations.append((current_step, score))
+          training_end |= "TRAINING END" in line
+      rows.append({
+          "file": path.name,
+          "step": current_step,
+          "progress_pct": 100.0 * current_step / 30_000_000,
+          "latest_eval": evaluations[-1] if evaluations else None,
+          "peak_eval": max(evaluations, key=lambda item: item[1]) if evaluations else None,
+          "num_evals": len(evaluations),
+          "training_end": training_end,
+          **latest,
+      })
+  print(json.dumps(rows, indent=2))
+  PY

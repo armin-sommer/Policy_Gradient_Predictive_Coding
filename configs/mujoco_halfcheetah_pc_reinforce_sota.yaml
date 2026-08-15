@@ -33,6 +33,7 @@ agent:
   experiment_name: "pc_reinforce_mujoco_sota"
   width: 256
   depth: 2
+  act_fn: "tanh"
   exp_std: true
 
 wandb:

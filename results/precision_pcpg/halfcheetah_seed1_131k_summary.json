@@ -1,0 +1,40 @@
+{
+  "setup": {
+    "environment": "halfcheetah",
+    "seed": 1,
+    "environment_steps": 131072,
+    "updates": 16,
+    "num_envs": 256,
+    "rollout_length": 32,
+    "width": 64,
+    "depth": 2,
+    "activation": "tanh"
+  },
+  "precision_npg": {
+    "beta": 24.0,
+    "final_activity_radius": 0.010060343891382217,
+    "final_projected_residual_rms_max": 0.00023533296189270914,
+    "final_actual_policy_kl_mean": 0.000539355562068522,
+    "final_actual_policy_kl_max": 0.002241790294647217,
+    "evaluation_returns": {
+      "32768": -4.702,
+      "65536": -4.3008,
+      "98304": -4.1817,
+      "131072": -4.4309
+    }
+  },
+  "precision_tr": {
+    "max_activity_radius": 0.01,
+    "final_beta_mean": 24.357593536376953,
+    "final_activity_radius": 0.009999988600611687,
+    "final_projected_residual_rms_max": 0.0006218610215000808,
+    "final_actual_policy_kl_mean": 0.0005570012144744396,
+    "final_actual_policy_kl_max": 0.0024889111518859863,
+    "evaluation_returns": {
+      "32768": -4.8876,
+      "65536": -5.3395,
+      "98304": -5.3503,
+      "131072": -4.4974
+    }
+  }
+}

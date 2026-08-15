@@ -18,8 +18,14 @@ from utils.utils import EnvConfig
 from pc_algorithms import gaussian_policy as gpol
 from pc_algorithms.likelihood_energy import make_likelihood_pc_step
 from pc_algorithms.inference import make_pc_step_at_rate, inference_residual
+from pc_algorithms.precision_energy import (
+    effective_policy_outputs,
+    natural_output_displacement,
+    settle_precision_outputs,
+    trust_region_precision,
+)
+from pc_algorithms.parameter_space_pc import make_parameter_pc_policy_step
 from pc_algorithms.gaussian_policy import (
-    LOG_STD_MAX,
     discrete_pc_targets,
     gaussian_pc_targets,
     sample_gaussian_action,
@@ -109,13 +115,44 @@ class Config:
     # (positive weights, bounded below; the RWR/MPO form).
     likelihood_adv_mode = 'signed'
     likelihood_tau = 1.0
+    # Innocenti-style free policy-output inference. ``precision_npg`` uses a
+    # fixed additive-error precision; ``precision_tr`` chooses the precision so
+    # the settled output lies on precision_max_radius. The settled output is then
+    # consolidated by the ordinary hidden-activity PC update.
+    policy_geometry = 'target'  # target | precision_* | parameter_*
+    precision_beta = 1.0
+    precision_max_radius = 0.01
+    # Parameter-space PC: infer the shared displacement that minimises
+    # 0.5*d.T(F+damping*I)d-g.T*d. NPG uses a fixed scale; TR rescales to the
+    # local Fisher-radius boundary. Exact empirical KL is diagnostic only.
+    parameter_pc_damping = 0.1
+    parameter_pc_step_size = 0.05  # Outer NPG scale eta.
+    parameter_pc_max_radius = 0.01
+    parameter_pc_max_kl = 0.01
+    parameter_pc_cg_iters = 50
+    parameter_pc_cg_tol = 1e-8
+    parameter_pc_joint_steps = 64
+    parameter_pc_joint_parameter_rate = 0.01
+    parameter_pc_joint_activity_rate = 0.01
+    parameter_pc_joint_error_rate = 0.01
+    parameter_pc_joint_penalty = 1.0
+    parameter_pc_joint_precision_rate = 0.01
+    parameter_pc_joint_precision_min = 0.1
+    parameter_pc_joint_precision_max = 10.0
+    parameter_pc_exact_kl_steps = 1000
+    parameter_pc_exact_kl_primal_rate = 0.01
+    parameter_pc_exact_kl_dual_rate = 0.02
+    parameter_pc_exact_kl_penalty = 1.0
+    parameter_pc_exact_kl_tol = 1e-4
     # Raise the log_std floor to tame the 1/sigma^2 amplifier (None = default -2;
     # e.g. -1 -> sigma_min 0.37, so 1/sigma^2 caps at ~7 instead of ~55).
     log_std_min = None
+    log_std_max = None
 
     width = 32
     depth = 2
     act_fn = 'relu'
+    sota_init = False
     policy_init_logit_bias = None
 
 
@@ -142,6 +179,25 @@ def _set_final_layer(model, logit_bias):
     return model
 
 
+def _orthogonal_init_model(model, key, output_gain):
+    """Match the orthogonal initialization used by the PPO/TRPO baselines."""
+    keys = jr.split(key, len(model))
+    for index, (block, layer_key) in enumerate(zip(model, keys)):
+        linear = block.layers[1]
+        gain = output_gain if index == len(model) - 1 else jnp.sqrt(2.0)
+        weight = jax.nn.initializers.orthogonal(gain)(
+            layer_key, linear.weight.shape, linear.weight.dtype)
+        model = eqx.tree_at(
+            lambda m, i=index: m[i].layers[1].weight, model, weight)
+        if linear.bias is not None:
+            model = eqx.tree_at(
+                lambda m, i=index: m[i].layers[1].bias,
+                model,
+                jnp.zeros_like(linear.bias),
+            )
+    return model
+
+
 def main(_):
     run_name = f"Exp_{Config.experiment_name}__{Config.env_name}__{Config.seed}__{int(time.time())}"
 
@@ -160,6 +216,8 @@ def main(_):
 
     if Config.log_std_min is not None:
         gpol.LOG_STD_MIN = float(Config.log_std_min)  # raise the sigma floor
+    if Config.log_std_max is not None:
+        gpol.LOG_STD_MAX = float(Config.log_std_max)
 
     random.seed(Config.seed)
     np.random.seed(Config.seed)
@@ -181,7 +239,18 @@ def main(_):
 
     continuous = getattr(envs.action_space, "continuous", False)
     action_size = envs.action_space.n
-    policy_output_dim = 2 * action_size if continuous else action_size
+    precision_modes = ('precision_npg', 'precision_tr')
+    parameter_modes = (
+        'parameter_npg', 'parameter_tr', 'parameter_local_tr',
+        'parameter_local_joint_tr', 'parameter_local_precision_tr',
+        'parameter_exact_tr')
+    state_indep = continuous and Config.state_indep_std
+    use_precision = continuous and Config.policy_geometry in precision_modes
+    use_parameter = continuous and Config.policy_geometry in parameter_modes
+    mean_only_policy = state_indep and use_parameter
+    policy_output_dim = (
+        action_size if mean_only_policy else
+        (2 * action_size if continuous else action_size))
     obs_dim = int(np.prod(env_state.obs.shape[1:]))
 
     policy_model = jpc.make_mlp(
@@ -193,6 +262,11 @@ def main(_):
         act_fn=Config.act_fn,
         use_bias=True,
     )
+    if Config.sota_init:
+        if not continuous:
+            raise ValueError("sota_init is only supported for continuous policies")
+        policy_model = _orthogonal_init_model(
+            policy_model, jr.fold_in(key_policy, 1), output_gain=0.01)
     if Config.policy_init_logit_bias is not None:
         if continuous:
             raise ValueError("policy_init_logit_bias is only supported for discrete policies")
@@ -207,6 +281,9 @@ def main(_):
         act_fn=Config.act_fn,
         use_bias=True,
     )
+    if Config.sota_init:
+        value_model = _orthogonal_init_model(
+            value_model, jr.fold_in(key_value, 1), output_gain=1.0)
 
     make_optim = optax.sgd if Config.optimizer == 'sgd' else optax.adam
     policy_optim = make_optim(Config.learning_rate)
@@ -226,13 +303,30 @@ def main(_):
     # exp_std), shared across states like the SOTA PPO/TRPO policy. The network
     # still emits 2*action_size, but its std head is frozen (PC-targeted to its
     # own output) and ignored; behavior uses this global vector instead.
-    state_indep = continuous and Config.state_indep_std
     use_likelihood = continuous and Config.likelihood_energy
+    if Config.policy_geometry not in ('target', *precision_modes, *parameter_modes):
+        raise ValueError(
+            "policy_geometry must be target, precision_npg, precision_tr, "
+            "parameter_npg, parameter_tr, parameter_local_tr, "
+            "parameter_local_joint_tr, parameter_local_precision_tr, or "
+            "parameter_exact_tr")
     if use_likelihood and state_indep:
         raise ValueError("likelihood_energy does not support state_indep_std")
     if use_likelihood and Config.natural_target:
         raise ValueError("set natural_target=False when likelihood_energy=True: "
                          "the energy supplies the geometry, not the target")
+    if use_precision and state_indep:
+        raise ValueError("precision-energy modes require state-dependent policy outputs")
+    if use_precision and use_likelihood:
+        raise ValueError("precision-energy and likelihood-energy modes are mutually exclusive")
+    if use_precision and Config.natural_target:
+        raise ValueError("set natural_target=False for precision-energy modes: "
+                         "output inference supplies the natural displacement")
+    if use_parameter and use_likelihood:
+        raise ValueError("parameter-space PC and likelihood-energy modes are mutually exclusive")
+    if use_parameter and Config.natural_target:
+        raise ValueError("set natural_target=False for parameter-space PC: "
+                         "the Fisher solve supplies the natural geometry")
     policy_log_std = jnp.zeros((action_size,), dtype=jnp.float32)
 
     def _with_global_std(net_out):
@@ -240,6 +334,10 @@ def main(_):
         mean = net_out[..., :action_size]
         return jnp.concatenate(
             [mean, jnp.broadcast_to(policy_log_std, mean.shape)], axis=-1)
+
+    def _eval_policy_forward(model, obs):
+        outputs = pcn_forward(model, obs)
+        return _with_global_std(outputs) if state_indep else outputs
 
     def _flat_obs(obs, update=True):
         raw = np.asarray(obs).reshape(obs.shape[0], -1).astype(np.float32)
@@ -350,6 +448,9 @@ def main(_):
         pgn_sum = jnp.array(0.0)
         pgn_cnt = 0
         mb_gnorms = []  # this step's norms, stacked once to avoid per-mb syncs
+        precision_betas = []
+        precision_radii = []
+        precision_residuals = []
 
         for _ in range(Config.update_epochs):
             key, key_perm = jr.split(key)
@@ -373,6 +474,11 @@ def main(_):
                     )
                     value_model, value_opt_state = (
                         value_result["model"], value_result["opt_state"])
+
+                # Parameter-PC has one shared free displacement for the entire
+                # rollout. It is inferred below after value minibatch updates.
+                if use_parameter:
+                    continue
 
                 # policy targets recomputed from the current policy
                 params_mb = pcn_forward(policy_model, mb_obs)
@@ -399,9 +505,32 @@ def main(_):
                     if Config.natural_target:
                         dstd = dstd * 0.5  # F^-1 on log_std channel
                     policy_log_std = jnp.clip(
-                        policy_log_std + dstd, gpol.LOG_STD_MIN, LOG_STD_MAX)
+                        policy_log_std + dstd,
+                        gpol.LOG_STD_MIN,
+                        gpol.LOG_STD_MAX)
                 elif continuous and use_likelihood:
                     policy_targets = None      # no target: the energy carries it
+                elif continuous and use_precision:
+                    mb_pre_tanh = jnp.asarray(pre_tanh_flat[mb_idx])
+                    if Config.policy_geometry == 'precision_tr':
+                        beta = trust_region_precision(
+                            params_mb, mb_pre_tanh, mb_adv, action_size,
+                            Config.precision_max_radius,
+                            target_scale=Config.target_scale,
+                            exp_std=Config.exp_std)
+                    else:
+                        beta = jnp.asarray(Config.precision_beta, dtype=params_mb.dtype)
+                    precision_result = settle_precision_outputs(
+                        params_mb, mb_pre_tanh, mb_adv,
+                        action_dim=action_size,
+                        beta=beta,
+                        max_t1=Config.max_t1,
+                        target_scale=Config.target_scale,
+                        exp_std=Config.exp_std)
+                    policy_targets = precision_result["targets"]
+                    precision_betas.append(precision_result["beta"])
+                    precision_radii.append(precision_result["radius"])
+                    precision_residuals.append(precision_result["residual_rms"])
                 elif continuous:
                     policy_targets = gaussian_pc_targets(
                         params_mb, jnp.asarray(pre_tanh_flat[mb_idx]), mb_adv,
@@ -452,6 +581,48 @@ def main(_):
                     pgn_cnt += 1
                     mb_gnorms.append(gnorm)
 
+        if use_parameter:
+            policy_result = make_parameter_pc_policy_step(
+                policy_model,
+                jnp.asarray(observations),
+                jnp.asarray(pre_tanh_flat),
+                jnp.asarray(advantages),
+                action_size,
+                mode=Config.policy_geometry,
+                damping=Config.parameter_pc_damping,
+                step_size=Config.parameter_pc_step_size,
+                max_radius=Config.parameter_pc_max_radius,
+                max_kl=Config.parameter_pc_max_kl,
+                cg_iters=Config.parameter_pc_cg_iters,
+                cg_tol=Config.parameter_pc_cg_tol,
+                joint_steps=Config.parameter_pc_joint_steps,
+                joint_parameter_rate=Config.parameter_pc_joint_parameter_rate,
+                joint_activity_rate=Config.parameter_pc_joint_activity_rate,
+                joint_error_rate=Config.parameter_pc_joint_error_rate,
+                joint_penalty=Config.parameter_pc_joint_penalty,
+                joint_precision_rate=Config.parameter_pc_joint_precision_rate,
+                joint_precision_min=Config.parameter_pc_joint_precision_min,
+                joint_precision_max=Config.parameter_pc_joint_precision_max,
+                exact_kl_steps=Config.parameter_pc_exact_kl_steps,
+                exact_kl_primal_rate=Config.parameter_pc_exact_kl_primal_rate,
+                exact_kl_dual_rate=Config.parameter_pc_exact_kl_dual_rate,
+                exact_kl_penalty=Config.parameter_pc_exact_kl_penalty,
+                exact_kl_tol=Config.parameter_pc_exact_kl_tol,
+                policy_log_std=(policy_log_std if state_indep else None),
+            )
+            policy_model = policy_result["model"]
+            if state_indep:
+                policy_log_std = jnp.clip(
+                    policy_result["policy_log_std"],
+                    gpol.LOG_STD_MIN,
+                    gpol.LOG_STD_MAX,
+                )
+            gnorm = policy_result["gradient_norm"]
+            pgn_max = gnorm
+            pgn_sum = gnorm
+            pgn_cnt = 1
+            mb_gnorms.append(gnorm)
+
         global_step += env_step_per_training_step
         if mb_gnorms:
             run_gnorms.extend(np.asarray(jnp.stack(mb_gnorms)).tolist())
@@ -483,6 +654,48 @@ def main(_):
             'diag/value_explained_var': float(
                 1.0 - np.var(value_targets - values) / (np.var(value_targets) + 1e-8)),
         }
+        if precision_betas:
+            metrics.update({
+                'diag/precision_beta_mean': float(jnp.mean(jnp.stack(precision_betas))),
+                'diag/precision_radius_mean': float(jnp.mean(jnp.stack(precision_radii))),
+                'diag/precision_radius_max': float(jnp.max(jnp.stack(precision_radii))),
+                'diag/precision_residual_rms_max': float(
+                    jnp.max(jnp.stack(precision_residuals))),
+            })
+        if use_parameter:
+            metrics.update({
+                'diag/parameter_pc_kkt': float(policy_result['relative_kkt']),
+                'diag/parameter_pc_fisher_cosine': float(
+                    policy_result['fisher_equation_cosine']),
+                'diag/parameter_pc_direction_norm': float(
+                    policy_result['direction_norm']),
+                'diag/parameter_pc_quadratic_radius': float(
+                    policy_result['quadratic_radius']),
+                'diag/parameter_pc_actual_kl': float(policy_result['actual_kl']),
+                'diag/parameter_pc_step_scale': float(policy_result['step_scale']),
+                'diag/parameter_pc_precision_beta': float(
+                    policy_result['precision_beta']),
+                'diag/parameter_pc_objective_before': float(
+                    policy_result['objective_before']),
+                'diag/parameter_pc_objective_after': float(
+                    policy_result['objective_after']),
+                'diag/parameter_pc_exact_kl_constraint': float(
+                    policy_result['exact_kl_constraint']),
+                'diag/parameter_pc_exact_kl_inference_residual': float(
+                    policy_result['exact_kl_inference_residual']),
+                'diag/parameter_pc_exact_kl_scalar_kkt': float(
+                    policy_result['exact_kl_scalar_kkt']),
+                'diag/parameter_pc_exact_kl_inference_steps': int(
+                    policy_result['exact_kl_inference_steps']),
+                'diag/parameter_pc_exact_kl_local_scale': float(
+                    policy_result['exact_kl_local_scale']),
+                'diag/parameter_pc_joint_constraint_rms': float(
+                    policy_result['joint_constraint_rms']),
+                'diag/parameter_pc_joint_precision_mean': float(
+                    policy_result['joint_precision_mean']),
+                'diag/parameter_pc_joint_inference_steps': int(
+                    policy_result['joint_inference_steps']),
+            })
         if continuous:
             params_post = pcn_forward(policy_model, probe_obs)
             if state_indep:
@@ -498,34 +711,60 @@ def main(_):
             policy_kl = (jnp.log(scale_post / scale_pre)
                          + (scale_pre ** 2 + (loc_pre - loc_post) ** 2)
                          / (2.0 * scale_post ** 2) - 0.5).sum(-1)
-            probe_targets = gaussian_pc_targets(
-                params_pre, jnp.asarray(pre_tanh_flat[:n_probe]),
-                jnp.asarray(advantages[:n_probe]), action_size,
-                Config.target_scale, exp_std=Config.exp_std,
-                natural_target=Config.natural_target)  # pre-clip, actual target family
-            mu_target_mag = jnp.abs(
-                probe_targets[:, :action_size] - loc_pre)
+            if use_parameter:
+                probe_targets = None
+            elif use_precision:
+                probe_pre_tanh = jnp.asarray(pre_tanh_flat[:n_probe])
+                probe_adv = jnp.asarray(advantages[:n_probe])
+                if Config.policy_geometry == 'precision_tr':
+                    probe_beta = trust_region_precision(
+                        params_pre, probe_pre_tanh, probe_adv, action_size,
+                        Config.precision_max_radius,
+                        target_scale=Config.target_scale,
+                        exp_std=Config.exp_std)
+                else:
+                    probe_beta = jnp.asarray(
+                        Config.precision_beta, dtype=params_pre.dtype)
+                probe_targets = (
+                    effective_policy_outputs(
+                        params_pre, action_size, exp_std=Config.exp_std)
+                    + natural_output_displacement(
+                        params_pre, probe_pre_tanh, probe_adv, action_size,
+                        target_scale=Config.target_scale,
+                        exp_std=Config.exp_std) / probe_beta)
+            else:
+                probe_targets = gaussian_pc_targets(
+                    params_pre, jnp.asarray(pre_tanh_flat[:n_probe]),
+                    jnp.asarray(advantages[:n_probe]), action_size,
+                    Config.target_scale, exp_std=Config.exp_std,
+                    natural_target=Config.natural_target)
             metrics.update({
                 'diag/log_std_mean': float(log_std_post.mean()),
                 'diag/log_std_min': float(log_std_post.min()),
                 'diag/frac_std_at_min': float((log_std_post <= gpol.LOG_STD_MIN + 1e-3).mean()),
-                'diag/frac_std_at_max': float((log_std_post >= LOG_STD_MAX - 1e-3).mean()),
+                'diag/frac_std_at_max': float(
+                    (log_std_post >= gpol.LOG_STD_MAX - 1e-3).mean()),
                 'diag/mu_abs_mean': float(jnp.abs(loc_post).mean()),
                 'diag/policy_drift_mean': float(drift.mean()),
                 'diag/policy_drift_max': float(drift.max()),
                 'diag/policy_kl_mean': float(policy_kl.mean()),
                 'diag/policy_kl_max': float(policy_kl.max()),
-                'diag/mu_target_mag_mean': float(mu_target_mag.mean()),
-                'diag/mu_target_mag_max': float(mu_target_mag.max()),
                 'diag/pretanh_sat_frac': float((np.abs(pre_tanh_flat) > 2.0).mean()),
             })
+            if probe_targets is not None:
+                mu_target_mag = jnp.abs(
+                    probe_targets[:, :action_size] - loc_pre)
+                metrics.update({
+                    'diag/mu_target_mag_mean': float(mu_target_mag.mean()),
+                    'diag/mu_target_mag_max': float(mu_target_mag.max()),
+                })
         logging.info(metrics)
 
         if Config.eval_env and training_step % Config.eval_every == 0:
             eval_time_start = time.time()
             if continuous:
                 eval_returns, eval_ep_lengths, eval_key = evaluate_gaussian_policy(
-                    eval_env, pcn_forward, policy_model, action_size, _flat_obs,
+                    eval_env, _eval_policy_forward, policy_model, action_size, _flat_obs,
                     eval_key, Config.episode_length, exp_std=Config.exp_std)
             else:
                 eval_returns, eval_ep_lengths, eval_key = evaluate_discrete_policy(
